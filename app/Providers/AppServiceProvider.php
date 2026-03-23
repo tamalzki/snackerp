@@ -18,9 +18,9 @@ class AppServiceProvider extends ServiceProvider
     {
         Paginator::useBootstrapFive();
 
-        Gate::define('view-reports',    fn(User $u) => $u->isAdmin());
+        Gate::define('view-reports',    fn(User $u) => $u->isAdmin() || $u->isBranchUser());
         Gate::define('manage-users',    fn(User $u) => $u->isAdmin());
         Gate::define('manage-branches', fn(User $u) => $u->isAdmin());
-        Gate::define('manage-bank',     fn(User $u) => $u->isAdmin());
+        Gate::define('manage-bank',     fn(User $u) => $u->isAdmin() || $u->isBranchUser());
     }
 }

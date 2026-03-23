@@ -14,6 +14,41 @@ php artisan migrate
 php artisan storage:link
 ```
 
+## Droplet / production `.env` (copy-paste)
+
+**Option A — template from the repo (easiest)**
+
+```bash
+cd /path/to/snackerp
+cp .env.droplet.example .env
+nano .env
+```
+
+Search for `CHANGE_ME` and set:
+
+| Placeholder | Set to |
+|-------------|--------|
+| `CHANGE_ME_YOUR_DOMAIN_OR_IP` | Your site URL, e.g. `https://snackerp.example.com` or `http://123.45.67.89` |
+| `CHANGE_ME_DB_NAME` | MySQL database name |
+| `CHANGE_ME_DB_USER` | MySQL user |
+| `CHANGE_ME_DB_PASSWORD` | MySQL password |
+
+Then:
+
+```bash
+php artisan key:generate
+php artisan migrate --force
+php artisan storage:link
+```
+
+**Option B — one command to create `.env`, then edit**
+
+```bash
+cp .env.droplet.example .env && nano .env
+```
+
+Commit and push `.env.droplet.example` so the Droplet always has the same template after `git pull`.
+
 ## Push to GitHub
 
 1. Create a **new empty repository** on [GitHub](https://github.com/new) (no README/license if you already have them here).
