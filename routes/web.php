@@ -4,6 +4,7 @@ use App\Http\Controllers\BankAccountController;
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\CashAccountController;
 use App\Http\Controllers\ConsignmentController;
+use App\Http\Controllers\DailyCashController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepositController;
 use App\Http\Controllers\ExpenseController;
@@ -75,6 +76,17 @@ Route::middleware(['auth'])->group(function () {
             Route::get('remittance', [ReportController::class, 'remittance'])->name('remittance');
         });
     });
+
+    // Daily Cash Flow
+    Route::get('daily-cash/today', [DailyCashController::class, 'today'])->name('daily-cash.today');
+    Route::get('daily-cash', [DailyCashController::class, 'index'])->name('daily-cash.index');
+    Route::post('daily-cash', [DailyCashController::class, 'store'])->name('daily-cash.store');
+    Route::get('daily-cash/{dailyCash}', [DailyCashController::class, 'show'])->name('daily-cash.show');
+    Route::put('daily-cash/{dailyCash}', [DailyCashController::class, 'update'])->name('daily-cash.update');
+    Route::post('daily-cash/{dailyCash}/entries', [DailyCashController::class, 'storeEntry'])->name('daily-cash.entries.store');
+    Route::put('daily-cash/{dailyCash}/entries/{entry}', [DailyCashController::class, 'updateEntry'])->name('daily-cash.entries.update');
+    Route::delete('daily-cash/{dailyCash}/entries/{entry}', [DailyCashController::class, 'destroyEntry'])->name('daily-cash.entries.destroy');
+    Route::post('daily-cash/{dailyCash}/deposit', [DailyCashController::class, 'depositToBank'])->name('daily-cash.deposit');
 
     // Consignment
     Route::get('consignment', [ConsignmentController::class, 'index'])->name('consignment.index');

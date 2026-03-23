@@ -234,6 +234,36 @@
     .page-link { color: #007A5E; }
     .page-item.active .page-link { background: #007A5E; border-color: #007A5E; }
     .page-link:hover { color: #005C47; }
+
+    /* Daily Cashflow distinct style */
+    .sidebar .cashflow-section {
+        padding: 11px 16px 3px;
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        font-weight: 700;
+        color: #f5c842;
+    }
+    .sidebar .nav-link.cashflow-link {
+        color: #f5e6a3;
+        background: rgba(245,200,66,0.1);
+        margin: 1px 6px;
+        border-radius: 6px;
+        padding: 7px 12px;
+        font-size: 15px;
+        border: 1px solid rgba(245,200,66,0.25);
+    }
+    .sidebar .nav-link.cashflow-link:hover {
+        background: rgba(245,200,66,0.2);
+        color: #fff;
+        border-color: rgba(245,200,66,0.5);
+    }
+    .sidebar .nav-link.cashflow-link.active {
+        background: #b8880f;
+        color: #fff;
+        border-color: #f5c842;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
     </style>
 </head>
 <body>
@@ -246,6 +276,13 @@
     </div>
 
     <div class="sidebar-nav">
+        {{-- DAILY CASHFLOW — pinned at top --}}
+        <div class="cashflow-section">💰 Daily Cashflow</div>
+        <a href="{{ route('daily-cash.today') }}"
+           class="nav-link cashflow-link {{ request()->routeIs('daily-cash.*') ? 'active' : '' }}">
+            <i class="bi bi-journal-text"></i> Daily Cashflow
+        </a>
+
         {{-- MAIN --}}
         <div class="nav-section">Main</div>
         <a href="{{ route('dashboard') }}"
