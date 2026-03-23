@@ -29,10 +29,11 @@ class DailyCashDay extends Model
     public function expenses(): float     { return $this->totalByType(['EXPENSES', 'PURCHASES']); }
     public function discretionary(): float{ return $this->totalByType('DISCRETIONARY'); }
     public function savings(): float      { return $this->totalByType('SAVINGS'); }
+    public function other(): float        { return $this->totalByType('OTHER'); }
 
     public function net(): float
     {
-        return $this->capital() + $this->income() - $this->expenses() - $this->discretionary() - $this->savings();
+        return $this->capital() + $this->income() - $this->expenses() - $this->discretionary() - $this->savings() - $this->other();
     }
 
     // Monthly totals (all days in the same month)

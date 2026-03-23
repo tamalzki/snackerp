@@ -25,7 +25,7 @@ class DailyCashController extends Controller
     {
         $prev = DailyCashDay::where('date', '<', $date)->orderByDesc('date')->first();
         if (! $prev) return 0;
-        return max(0, $this->closingBalance($prev));
+        return $this->closingBalance($prev); // allow negative carry-forward
     }
 
     // List recent days; auto-create today if missing
@@ -66,8 +66,9 @@ class DailyCashController extends Controller
         $expenses      = (float) $entries->whereIn('type', ['EXPENSES', 'PURCHASES'])->sum('amount');
         $discretionary = (float) $entries->where('type', 'DISCRETIONARY')->sum('amount');
         $savings       = (float) $entries->where('type', 'SAVINGS')->sum('amount');
-        return compact('capital', 'income', 'expenses', 'discretionary', 'savings') + [
-            'net' => $capital + $income - $expenses - $discretionary - $savings,
+        $other         = (float) $entries->where('type', 'OTHER')->sum('amount');
+        return compact('capital', 'income', 'expenses', 'discretionary', 'savings', 'other') + [
+            'net' => $capital + $income - $expenses - $discretionary - $savings - $other,
         ];
     }
 
@@ -159,10 +160,9 @@ class DailyCashController extends Controller
 
         $recentDays  = DailyCashDay::orderByDesc('date')->take(10)->get();
         $bankAccounts = BankAccount::orderBy('bank_name')->get();
-        $cashAccounts = CashAccount::orderBy('name')->get();
         $dayDeposits  = Deposit::where('deposit_date', $dailyCash->date)->latest()->get();
 
-        return view('daily-cash.show', compact('dailyCash', 'prev', 'next', 'recentDays', 'bankAccounts', 'cashAccounts', 'dayDeposits'));
+        return view('daily-cash.show', compact('dailyCash', 'prev', 'next', 'recentDays', 'bankAccounts', 'dayDeposits'));
     }
 
     // Create a specific date's record
@@ -201,7 +201,7 @@ class DailyCashController extends Controller
         $request->validate([
             'type'        => 'required|in:CAPITAL,INCOME,EXPENSES,PURCHASES,DISCRETIONARY,SAVINGS,OTHER',
             'description' => 'required|string|max:255',
-            'amount'      => 'required|numeric|min:0',
+            'amount'      => 'required|numeric|min:0.01',
         ]);
 
         $max = $dailyCash->entries()->max('sort_order') ?? 0;
@@ -222,7 +222,7 @@ class DailyCashController extends Controller
         $request->validate([
             'type'        => 'required|in:CAPITAL,INCOME,EXPENSES,PURCHASES,DISCRETIONARY,SAVINGS,OTHER',
             'description' => 'required|string|max:255',
-            'amount'      => 'required|numeric|min:0',
+            'amount'      => 'required|numeric|min:0.01',
         ]);
         $entry->update([
             'type'        => $request->type,

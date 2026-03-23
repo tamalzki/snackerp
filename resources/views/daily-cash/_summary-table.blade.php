@@ -1,6 +1,6 @@
 @php
     $cols = ['capital' => 'Capital', 'income' => 'Income', 'expenses' => 'Expenses',
-             'discretionary' => 'Discret.', 'savings' => 'Savings'];
+             'discretionary' => 'Discret.', 'savings' => 'Savings', 'other' => 'Other'];
 @endphp
 
 @if(empty($rows))
@@ -17,6 +17,7 @@
             <th class="text-end text-danger">Expenses</th>
             <th class="text-end">Discret.</th>
             <th class="text-end">Savings</th>
+            <th class="text-end">Other</th>
             <th class="text-end" style="border-left:2px solid #007A5E;">Net</th>
         </tr>
     </thead>
@@ -37,6 +38,7 @@
             <td class="text-end text-danger">₱{{ number_format($row['expenses'], 2) }}</td>
             <td class="text-end">₱{{ number_format($row['discretionary'], 2) }}</td>
             <td class="text-end">₱{{ number_format($row['savings'], 2) }}</td>
+            <td class="text-end text-secondary">₱{{ number_format($row['other'] ?? 0, 2) }}</td>
             <td class="text-end fw-bold {{ $row['net'] >= 0 ? 'text-success' : 'text-danger' }}"
                 style="border-left:2px solid #007A5E;">
                 ₱{{ number_format($row['net'], 2) }}
@@ -45,7 +47,7 @@
 
         {{-- Detail rows (days inside month, or months inside year) --}}
         <tr class="p-0 border-0">
-            <td colspan="8" class="p-0 border-0">
+            <td colspan="9" class="p-0 border-0">
                 <div class="collapse show" id="detail-{{ $key }}">
                     <table class="table table-sm mb-0" style="font-size:0.78rem;background:#fff;">
                         <thead>
@@ -58,6 +60,7 @@
                                 <th class="text-end text-danger">Expenses</th>
                                 <th class="text-end">Discret.</th>
                                 <th class="text-end">Savings</th>
+                                <th class="text-end">Other</th>
                                 <th class="text-end" style="border-left:2px solid #007A5E;">Net</th>
                                 <th style="width:60px;"></th>
                             </tr>
@@ -81,6 +84,7 @@
                                 <td class="text-end text-danger">₱{{ number_format($sub['expenses'], 2) }}</td>
                                 <td class="text-end">₱{{ number_format($sub['discretionary'], 2) }}</td>
                                 <td class="text-end">₱{{ number_format($sub['savings'], 2) }}</td>
+                                <td class="text-end text-secondary">₱{{ number_format($sub['other'] ?? 0, 2) }}</td>
                                 <td class="text-end fw-bold {{ $subNet >= 0 ? 'text-success' : 'text-danger' }}"
                                     style="border-left:2px solid #007A5E;">
                                     ₱{{ number_format($subNet, 2) }}
@@ -121,6 +125,7 @@
             <td class="text-end text-danger">₱{{ number_format(array_sum(array_column($rows,'expenses')), 2) }}</td>
             <td class="text-end">₱{{ number_format(array_sum(array_column($rows,'discretionary')), 2) }}</td>
             <td class="text-end">₱{{ number_format(array_sum(array_column($rows,'savings')), 2) }}</td>
+            <td class="text-end text-secondary">₱{{ number_format(array_sum(array_column($rows,'other')), 2) }}</td>
             @php $totalNet = array_sum(array_column($rows,'net')); @endphp
             <td class="text-end {{ $totalNet >= 0 ? 'text-success' : 'text-danger' }}"
                 style="border-left:2px solid #007A5E;">

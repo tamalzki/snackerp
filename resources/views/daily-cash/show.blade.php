@@ -89,6 +89,12 @@
                             <td class="ps-3"><span class="badge bg-info text-dark" style="font-size:0.65rem;">Savings</span></td>
                             <td class="text-end pe-3">₱{{ number_format($dailyCash->savings(), 2) }}</td>
                         </tr>
+                        @if($dailyCash->other() > 0)
+                        <tr>
+                            <td class="ps-3"><span class="badge bg-dark" style="font-size:0.65rem;">Other</span></td>
+                            <td class="text-end pe-3">₱{{ number_format($dailyCash->other(), 2) }}</td>
+                        </tr>
+                        @endif
                         <tr style="background:#f0f9f6;border-top:2px solid #007A5E;">
                             <td class="ps-3 fw-bold">NET</td>
                             @php $net = $dailyCash->net(); @endphp
@@ -174,12 +180,13 @@
                             <tr>
                                 <th class="ps-3" style="width:120px;">Type</th>
                                 <th>Description</th>
-                                <th class="text-end" style="width:110px;">Capital</th>
-                                <th class="text-end" style="width:110px;">Income</th>
-                                <th class="text-end" style="width:110px;">Expenses</th>
-                                <th class="text-end" style="width:110px;">Discret.</th>
-                                <th class="text-end" style="width:110px;">Savings</th>
-                                <th style="width:70px;"></th>
+                                <th class="text-end" style="width:100px;">Capital</th>
+                                <th class="text-end" style="width:100px;">Income</th>
+                                <th class="text-end" style="width:100px;">Expenses</th>
+                                <th class="text-end" style="width:100px;">Discret.</th>
+                                <th class="text-end" style="width:100px;">Savings</th>
+                                <th class="text-end" style="width:100px;">Other</th>
+                                <th style="width:140px;"></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -197,6 +204,7 @@
                                 <td class="text-end text-danger">{{ in_array($entry->type, ['EXPENSES','PURCHASES']) ? '₱'.number_format($entry->amount,2) : '' }}</td>
                                 <td class="text-end">{{ $entry->type === 'DISCRETIONARY' ? '₱'.number_format($entry->amount,2) : '' }}</td>
                                 <td class="text-end text-info">{{ $entry->type === 'SAVINGS' ? '₱'.number_format($entry->amount,2) : '' }}</td>
+                                <td class="text-end text-secondary">{{ $entry->type === 'OTHER' ? '₱'.number_format($entry->amount,2) : '' }}</td>
                                 <td class="text-end pe-2" style="white-space:nowrap;">
                                     <button class="btn btn-outline-secondary py-0 px-2"
                                             style="font-size:0.75rem;"
@@ -217,7 +225,7 @@
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="8" class="text-center text-muted py-4">
+                                <td colspan="9" class="text-center text-muted py-4">
                                     No entries yet — click <strong>Add Entry</strong> to start logging.
                                 </td>
                             </tr>
@@ -232,6 +240,7 @@
                                 <td class="text-end text-danger">₱{{ number_format($dailyCash->expenses(), 2) }}</td>
                                 <td class="text-end">₱{{ number_format($dailyCash->discretionary(), 2) }}</td>
                                 <td class="text-end text-info">₱{{ number_format($dailyCash->savings(), 2) }}</td>
+                                <td class="text-end text-secondary">₱{{ number_format($dailyCash->totalByType('OTHER'), 2) }}</td>
                                 <td></td>
                             </tr>
                         </tfoot>
