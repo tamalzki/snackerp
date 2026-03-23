@@ -32,6 +32,8 @@ class ConsignmentController extends Controller
             return redirect()->route('consignment.branch', $user->branch_id);
         }
 
+        // Managers see all branches (same as admin), so fall through below.
+
         $branches = Branch::where('is_active', true)
             ->orderBy('name')
             ->get()
@@ -525,7 +527,7 @@ class ConsignmentController extends Controller
     private function assertBranchUserOwns(int $branchId): void
     {
         $user = auth()->user();
-        if ($user->isAdmin()) {
+        if ($user->isAdmin() || $user->isManager()) {
             return;
         }
         if (! $user->branch_id || (int) $user->branch_id !== (int) $branchId) {

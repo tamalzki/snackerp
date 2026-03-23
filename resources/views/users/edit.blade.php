@@ -44,6 +44,7 @@
                         <label class="form-label fw-semibold">Role</label>
                         <select name="role" id="user_role" class="form-select @error('role') is-invalid @enderror" required>
                             <option value="admin" @selected(old('role', $user->role) === 'admin')>Admin</option>
+                            <option value="manager" @selected(old('role', $user->role) === 'manager')>Manager</option>
                             <option value="branch" @selected(old('role', $user->role) === 'branch')>Branch</option>
                         </select>
                         @error('role')<div class="invalid-feedback">{{ $message }}</div>@enderror
@@ -78,6 +79,7 @@
     function toggle() {
         wrap.style.display = role.value === 'branch' ? 'block' : 'none';
     }
+    // Manager role does not require a branch assignment.
     role.addEventListener('change', toggle);
     toggle();
 })();

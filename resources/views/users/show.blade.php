@@ -28,7 +28,7 @@
             <div class="card-body">
                 <div class="text-muted small">Role</div>
                 <div>
-                    <span class="badge {{ $user->role === 'admin' ? 'bg-dark' : 'bg-secondary' }} fs-6">
+                    <span class="badge {{ $user->role === 'admin' ? 'bg-dark' : ($user->role === 'manager' ? 'bg-primary' : 'bg-secondary') }} fs-6">
                         {{ ucfirst($user->role) }}
                     </span>
                 </div>

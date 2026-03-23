@@ -30,7 +30,7 @@ class UserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
-            'role' => ['required', 'in:admin,branch'],
+            'role' => ['required', 'in:admin,manager,branch'],
             'branch_id' => [
                 'nullable',
                 'exists:branches,id',
@@ -38,7 +38,7 @@ class UserController extends Controller
             ],
         ]);
 
-        if ($validated['role'] === 'admin') {
+        if (in_array($validated['role'], ['admin', 'manager'])) {
             $validated['branch_id'] = null;
         }
 
@@ -70,7 +70,7 @@ class UserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
-            'role' => ['required', 'in:admin,branch'],
+            'role' => ['required', 'in:admin,manager,branch'],
             'branch_id' => [
                 'nullable',
                 'exists:branches,id',
@@ -78,7 +78,7 @@ class UserController extends Controller
             ],
         ]);
 
-        if ($validated['role'] === 'admin') {
+        if (in_array($validated['role'], ['admin', 'manager'])) {
             $validated['branch_id'] = null;
         }
 

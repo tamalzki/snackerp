@@ -29,7 +29,7 @@
                     <td class="fw-semibold">{{ $u->name }}</td>
                     <td class="text-muted small">{{ $u->email }}</td>
                     <td>
-                        <span class="badge {{ $u->role === 'admin' ? 'bg-dark' : 'bg-secondary' }}">
+                        <span class="badge {{ $u->role === 'admin' ? 'bg-dark' : ($u->role === 'manager' ? 'bg-primary' : 'bg-secondary') }}">
                             {{ ucfirst($u->role) }}
                         </span>
                     </td>

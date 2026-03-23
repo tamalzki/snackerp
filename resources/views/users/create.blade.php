@@ -44,6 +44,7 @@
                         <label class="form-label fw-semibold">Role</label>
                         <select name="role" id="user_role" class="form-select @error('role') is-invalid @enderror" required>
                             <option value="admin" @selected(old('role') === 'admin')>Admin</option>
+                            <option value="manager" @selected(old('role') === 'manager')>Manager</option>
                             <option value="branch" @selected(old('role', 'branch') === 'branch')>Branch</option>
                         </select>
                         @error('role')<div class="invalid-feedback">{{ $message }}</div>@enderror
