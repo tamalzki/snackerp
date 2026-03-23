@@ -25,27 +25,27 @@
 
     /* Brand */
     .sidebar .brand {
-    padding: 20px 20px 16px;
+    padding: 12px 20px 10px;
     border-bottom: 1px solid rgba(255,255,255,0.1);
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: 3px;
+    gap: 2px;
 }
 
 .sidebar .brand .brand-script {
     font-family: 'Playfair Display', serif;
     font-style: italic;
-    font-size: 2rem;
+    font-size: 1.6rem;
     color: #fff;
     line-height: 1;
     letter-spacing: 0.3px;
 }
 
 .sidebar .brand .brand-sub {
-    font-size: 0.55rem;
+    font-size: 0.5rem;
     letter-spacing: 1px;
     text-transform: uppercase;
     color: rgba(255,255,255,0.45);
@@ -55,8 +55,8 @@
 
     /* Nav sections */
     .sidebar .nav-section {
-        padding: 16px 16px 4px;
-        font-size: 0.68rem;
+        padding: 10px 16px 2px;
+        font-size: 0.63rem;
         text-transform: uppercase;
         color: rgba(255,255,255,0.35);
         letter-spacing: 1.2px;
@@ -65,13 +65,13 @@
 
     .sidebar .nav-link {
         color: rgba(255,255,255,0.65);
-        padding: 8px 16px;
+        padding: 6px 12px;
         border-radius: 6px;
         display: flex;
         align-items: center;
-        gap: 10px;
-        font-size: 0.85rem;
-        margin: 1px 8px;
+        gap: 8px;
+        font-size: 0.82rem;
+        margin: 1px 6px;
         transition: all 0.15s;
     }
 
@@ -87,13 +87,13 @@
     }
 
     .sidebar .nav-link i {
-        font-size: 1rem;
-        width: 18px;
+        font-size: 0.9rem;
+        width: 16px;
     }
 
     .sidebar-footer {
         margin-top: auto;
-        padding: 12px;
+        padding: 8px;
         border-top: 1px solid rgba(255,255,255,0.1);
         position: sticky;
         bottom: 0;
