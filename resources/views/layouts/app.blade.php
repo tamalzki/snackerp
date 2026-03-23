@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Angie ERP — @yield('title', 'Dashboard')</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
+    <style>
+    body { background: #f0f2f5; font-size: 0.9rem; }
+
+    .sidebar {
+        width: 240px;
+        height: 100vh;
+        background: #004d3b;
+        position: fixed;
+        top: 0; left: 0;
+        z-index: 100;
+        overflow-y: auto;
+        overflow-x: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Brand */
+    .sidebar .brand {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 3px;
+}
+
+.sidebar .brand .brand-script {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-size: 2rem;
+    color: #fff;
+    line-height: 1;
+    letter-spacing: 0.3px;
+}
+
+.sidebar .brand .brand-sub {
+    font-size: 0.55rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.45);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+    /* Nav sections */
+    .sidebar .nav-section {
+        padding: 16px 16px 4px;
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        color: rgba(255,255,255,0.35);
+        letter-spacing: 1.2px;
+        font-weight: 600;
+    }
+
+    .sidebar .nav-link {
+        color: rgba(255,255,255,0.65);
+        padding: 8px 16px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.85rem;
+        margin: 1px 8px;
+        transition: all 0.15s;
+    }
+
+    .sidebar .nav-link:hover {
+        background: rgba(255,255,255,0.1);
+        color: #fff;
+    }
+
+    .sidebar .nav-link.active {
+        background: #007A5E;
+        color: #fff;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .sidebar .nav-link i {
+        font-size: 1rem;
+        width: 18px;
+    }
+
+    .sidebar-footer {
+        margin-top: auto;
+        padding: 12px;
+        border-top: 1px solid rgba(255,255,255,0.1);
+        position: sticky;
+        bottom: 0;
+        background: #004d3b;
+        flex-shrink: 0;
+    }
+
+    .sidebar-footer .nav-link {
+        color: rgba(255,255,255,0.5);
+    }
+
+    .sidebar-footer .nav-link:hover {
+        color: #fff;
+        background: rgba(255,255,255,0.08);
+    }
+
+    /* Main content */
+    .main-content {
+        margin-left: 240px;
+        padding: 24px;
+        min-height: 100vh;
+    }
+
+    /* Topbar */
+    .topbar {
+        background: #fff;
+        border-radius: 10px;
+        padding: 12px 20px;
+        margin-bottom: 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 1px 3px rgba(0,0,0,.06);
+        border-left: 3px solid #007A5E;
+    }
+
+    .topbar .page-title {
+        font-weight: 700;
+        font-size: 1rem;
+        color: #1a2234;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .topbar .page-title .brand-prefix {
+        font-family: 'Playfair Display', serif;
+        font-style: italic;
+        color: #007A5E;
+        font-size: 1.1rem;
+        font-weight: 700;
+    }
+
+    .topbar .page-title .separator {
+        color: #d1d5db;
+        font-weight: 300;
+    }
+
+    .topbar .user-info {
+        font-size: 0.82rem;
+        color: #64748b;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .topbar .user-info .role-badge {
+        background: #e6f4f1;
+        color: #007A5E;
+        border-radius: 20px;
+        padding: 2px 10px;
+        font-weight: 600;
+        font-size: 0.78rem;
+    }
+
+    /* Cards */
+    .card {
+        border: none;
+        border-radius: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+
+    .card-header {
+        background: #fff;
+        border-bottom: 1px solid #f1f5f9;
+        font-weight: 600;
+        padding: 14px 20px;
+        border-radius: 10px 10px 0 0 !important;
+    }
+
+    /* Buttons */
+    .btn-primary {
+        background: #007A5E;
+        border-color: #007A5E;
+    }
+
+    .btn-primary:hover {
+        background: #005C47;
+        border-color: #005C47;
+    }
+
+    .btn-primary:focus,
+    .btn-primary:active {
+        background: #005C47;
+        border-color: #005C47;
+        box-shadow: 0 0 0 3px rgba(0,122,94,0.2);
+    }
+
+    /* Table */
+.table thead th {
+    background: #004d3b;
+    color: #fff;
+    border: none;
+    font-weight: 500;
+    font-size: 0.82rem;
+}
+
+/* Sub-table header override (used in collapsible sale items) */
+.table thead.sub-header th {
+    background: #f0f2f5;
+    color: #374151;
+    font-weight: 600;
+    font-size: 0.78rem;
+}
+
+    .table tbody tr:hover { background: #f8fafc; }
+    .badge { font-weight: 500; }
+
+    /* Misc */
+    .btn-action { display: inline-flex; align-items: center; gap: 5px; font-size: 0.82rem; }
+    .pagination { margin-bottom: 0; }
+    .page-link { color: #007A5E; }
+    .page-item.active .page-link { background: #007A5E; border-color: #007A5E; }
+    .page-link:hover { color: #005C47; }
+    </style>
+</head>
+<body>
+
+{{-- SIDEBAR --}}
+<nav class="sidebar">
+    <div class="brand">
+        <span class="brand-script">Angie</span>
+        <span class="brand-sub">Inventory · Sales · Finance</span>
+    </div>
+
+    <div class="mt-1">
+        {{-- MAIN --}}
+        <div class="nav-section">Main</div>
+        <a href="{{ route('dashboard') }}"
+           class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}">
+            <i class="bi bi-speedometer2"></i> Dashboard
+        </a>
+
+        {{-- INVENTORY --}}
+        <div class="nav-section">Inventory</div>
+        <a href="{{ route('raw-materials.index') }}"
+           class="nav-link {{ request()->routeIs('raw-materials.*') ? 'active' : '' }}">
+            <i class="bi bi-boxes"></i> Raw Materials
+        </a>
+        <a href="{{ route('purchases.index') }}"
+           class="nav-link {{ request()->routeIs('purchases.*') ? 'active' : '' }}">
+            <i class="bi bi-cart-plus"></i> RM Purchases
+        </a>
+        <a href="{{ route('finished-products.index') }}"
+           class="nav-link {{ request()->routeIs('finished-products.*') ? 'active' : '' }}">
+            <i class="bi bi-bag-check"></i> Finished Products
+        </a>
+
+        @can('manage-branches')
+        <a href="{{ route('branches.index') }}"
+           class="nav-link {{ request()->routeIs('branches.*') ? 'active' : '' }}">
+            <i class="bi bi-shop"></i> Branches
+        </a>
+        @endcan
+
+        @can('manage-users')
+        <a href="{{ route('users.index') }}"
+           class="nav-link {{ request()->routeIs('users.*') ? 'active' : '' }}">
+            <i class="bi bi-people"></i> Users
+        </a>
+        @endcan
+
+        {{-- DISTRIBUTION --}}
+        <div class="nav-section">Distribution</div>
+        <a href="{{ route('transfers.index') }}"
+           class="nav-link {{ request()->routeIs('transfers.*') ? 'active' : '' }}">
+            <i class="bi bi-arrow-left-right"></i> Stock Transfers
+        </a>
+
+        {{-- SALES --}}
+<div class="nav-section">Sales & Consignment</div>
+<a href="{{ route('consignment.index') }}"
+   class="nav-link {{ request()->routeIs('consignment.*') ? 'active' : '' }}">
+    <i class="bi bi-receipt"></i> Consignment
+</a>
+
+        {{-- FINANCE --}}
+        @can('manage-bank')
+        <div class="nav-section">Finance</div>
+        <a href="{{ route('bank-accounts.index') }}"
+           class="nav-link {{ request()->routeIs('bank-accounts.*') ? 'active' : '' }}">
+            <i class="bi bi-bank"></i> Bank Accounts
+        </a>
+        <a href="{{ route('deposits.index') }}"
+           class="nav-link {{ request()->routeIs('deposits.*') ? 'active' : '' }}">
+            <i class="bi bi-safe"></i> Deposits
+        </a>
+        <a href="{{ route('expenses.index') }}"
+           class="nav-link {{ request()->routeIs('expenses.*') ? 'active' : '' }}">
+            <i class="bi bi-cash-stack"></i> Expenses
+        </a>
+        @endcan
+
+        {{-- REPORTS --}}
+        @can('view-reports')
+<div class="nav-section">Reports</div>
+<a href="{{ route('reports.hub') }}"
+   class="nav-link {{ request()->routeIs('reports.*') ? 'active' : '' }}">
+    <i class="bi bi-bar-chart-line"></i> Reports
+</a>
+@endcan
+
+        
+
+    <div class="sidebar-footer">
+        <form method="POST" action="{{ route('logout') }}">
+            @csrf
+            <button type="submit" class="nav-link border-0 bg-transparent w-100 text-start">
+                <i class="bi bi-box-arrow-left"></i> Logout
+            </button>
+        </form>
+    </div>
+</nav>
+
+{{-- MAIN CONTENT --}}
+<div class="main-content">
+    <div class="topbar">
+        <div class="page-title">
+            <span class="brand-prefix">Angie</span>
+            <span class="separator">|</span>
+            <span>@yield('title', 'Dashboard')</span>
+        </div>
+        <div class="user-info">
+            <i class="bi bi-person-circle"></i>
+            {{ auth()->user()->name }}
+            <span class="role-badge">{{ ucfirst(auth()->user()->role) }}</span>
+        </div>
+    </div>
+
+    {{-- FLASH MESSAGES --}}
+    @if(session('success'))
+        <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2" role="alert">
+            <i class="bi bi-check-circle-fill"></i>
+            {{ session('success') }}
+            <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+        </div>
+    @endif
+
+    @if(session('error'))
+        <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            {{ session('error') }}
+            <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+        </div>
+    @endif
+
+    @if($errors->any())
+        <div class="alert alert-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <strong>Please fix the following errors:</strong>
+            <ul class="mb-0 mt-1">
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    @endif
+
+    @yield('content')
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+@stack('scripts')
+</body>
+</html>
