@@ -53,10 +53,18 @@
     white-space: nowrap;
 }
 
+    /* Nav scroll area */
+    .sidebar .sidebar-nav {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-bottom: 4px;
+    }
+
     /* Nav sections */
     .sidebar .nav-section {
-        padding: 10px 16px 2px;
-        font-size: 0.63rem;
+        padding: 11px 16px 3px;
+        font-size: 0.65rem;
         text-transform: uppercase;
         color: rgba(255,255,255,0.35);
         letter-spacing: 1.2px;
@@ -65,12 +73,12 @@
 
     .sidebar .nav-link {
         color: rgba(255,255,255,0.65);
-        padding: 6px 12px;
+        padding: 7px 12px;
         border-radius: 6px;
         display: flex;
         align-items: center;
         gap: 8px;
-        font-size: 0.82rem;
+        font-size: 0.84rem;
         margin: 1px 6px;
         transition: all 0.15s;
     }
@@ -95,8 +103,6 @@
         margin-top: auto;
         padding: 8px;
         border-top: 1px solid rgba(255,255,255,0.1);
-        position: sticky;
-        bottom: 0;
         background: #004d3b;
         flex-shrink: 0;
     }
@@ -239,7 +245,7 @@
         <span class="brand-sub">Inventory · Sales · Finance</span>
     </div>
 
-    <div class="mt-1">
+    <div class="sidebar-nav">
         {{-- MAIN --}}
         <div class="nav-section">Main</div>
         <a href="{{ route('dashboard') }}"
@@ -317,6 +323,8 @@
 @endcan
 
         
+
+    </div>{{-- end .sidebar-nav --}}
 
     <div class="sidebar-footer">
         <form method="POST" action="{{ route('logout') }}">
