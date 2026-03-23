@@ -78,7 +78,7 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        font-size: 0.84rem;
+        font-size: 15px;
         margin: 1px 6px;
         transition: all 0.15s;
     }
