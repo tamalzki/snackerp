@@ -38,8 +38,11 @@
 {{-- ===== DAILY LOG ===== --}}
 @if($tab === 'daily')
 <div class="card">
-    <div class="card-header d-flex align-items-center gap-2">
-        <i class="bi bi-journal-text text-success"></i> Daily Cash Journal
+    <div class="card-header d-flex flex-column flex-sm-row align-items-sm-center gap-1">
+        <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-journal-text text-success"></i> Daily Cash Journal
+        </div>
+        <span class="text-muted small ms-sm-auto">Cash period starts March 1 each year (no carry from February into the new March).</span>
     </div>
     <div class="card-body p-0">
         <table class="table mb-0 align-middle">
