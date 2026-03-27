@@ -81,6 +81,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('daily-cash/today', [DailyCashController::class, 'today'])->name('daily-cash.today');
     Route::get('daily-cash', [DailyCashController::class, 'index'])->name('daily-cash.index');
     Route::post('daily-cash', [DailyCashController::class, 'store'])->name('daily-cash.store');
+    Route::get('daily-cash/open/{date}', [DailyCashController::class, 'openDate'])
+        ->where('date', '[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        ->name('daily-cash.open-date');
     Route::get('daily-cash/{dailyCash}', [DailyCashController::class, 'show'])->name('daily-cash.show');
     Route::put('daily-cash/{dailyCash}', [DailyCashController::class, 'update'])->name('daily-cash.update');
     Route::post('daily-cash/{dailyCash}/entries', [DailyCashController::class, 'storeEntry'])->name('daily-cash.entries.store');

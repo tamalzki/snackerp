@@ -60,6 +60,99 @@ class DailyCashController extends Controller
         return $this->closingBalance($prev);
     }
 
+    /** Whether this calendar day can be opened in Daily Cash (within FY, not future). */
+    private function isDayEncodable(Carbon $d): bool
+    {
+        $periodStart = $this->cashflowPeriodStart($d);
+        $fyEnd = $periodStart->copy()->addYear()->subDay();
+        $maxNav = Carbon::today()->min($fyEnd);
+
+        return $d->gte($periodStart) && $d->lte($maxNav);
+    }
+
+    /** Same weekday, previous week (arrow left). */
+    private function weekPrevNav(DailyCashDay $dailyCash): ?array
+    {
+        $prev = Carbon::parse($dailyCash->date)->copy()->subWeek();
+        if (! $this->isDayEncodable($prev)) {
+            return null;
+        }
+
+        $prevDay = DailyCashDay::where('date', $prev->toDateString())->first();
+
+        return [
+            'url' => $prevDay
+                ? route('daily-cash.show', $prevDay, absolute: false)
+                : route('daily-cash.open-date', ['date' => $prev->format('Y-m-d')], absolute: false),
+            'label' => $prev->format('F j'),
+        ];
+    }
+
+    /** Same weekday, next week (arrow right). */
+    private function weekNextNav(DailyCashDay $dailyCash): ?array
+    {
+        $next = Carbon::parse($dailyCash->date)->copy()->addWeek();
+        if (! $this->isDayEncodable($next)) {
+            return null;
+        }
+
+        $nextDay = DailyCashDay::where('date', $next->toDateString())->first();
+
+        return [
+            'url' => $nextDay
+                ? route('daily-cash.show', $nextDay, absolute: false)
+                : route('daily-cash.open-date', ['date' => $next->format('Y-m-d')], absolute: false),
+            'label' => $next->format('F j'),
+        ];
+    }
+
+    /**
+     * One ISO week (Mon → Sun) containing the viewed day, stopping at **today** (no future dates).
+     *
+     * @return list<array{date: Carbon, day: DailyCashDay|null, inRange: bool}>
+     */
+    private function buildWeekStrip(DailyCashDay $dailyCash): array
+    {
+        $view = Carbon::parse($dailyCash->date)->startOfDay();
+        $weekStart = $view->copy()->startOfWeek(Carbon::MONDAY);
+        $weekEnd = $weekStart->copy()->addDays(6);
+        $today = Carbon::today()->startOfDay();
+        $lastDay = $weekEnd->copy()->min($today);
+
+        $existing = DailyCashDay::query()
+            ->where('date', '>=', $weekStart->toDateString())
+            ->where('date', '<=', $lastDay->toDateString())
+            ->get()
+            ->keyBy(fn ($d) => $d->date->format('Y-m-d'));
+
+        $strip = [];
+        for ($d = $weekStart->copy(); $d->lte($lastDay); $d->addDay()) {
+            $key = $d->format('Y-m-d');
+            $strip[] = [
+                'date' => $d->copy(),
+                'day' => $existing->get($key),
+                'inRange' => $this->isDayEncodable($d),
+            ];
+        }
+
+        return $strip;
+    }
+
+    private function formatDayRangeLabel(Carbon $first, Carbon $last): string
+    {
+        if ($first->equalTo($last)) {
+            return $first->format('F j, Y');
+        }
+        if ($first->month === $last->month && $first->year === $last->year) {
+            return $first->format('F j').' – '.$last->format('j, Y');
+        }
+        if ($first->year === $last->year) {
+            return $first->format('F j').' – '.$last->format('F j, Y');
+        }
+
+        return $first->format('F j, Y').' – '.$last->format('F j, Y');
+    }
+
     // List recent days; auto-create today if missing
     public function index(Request $request)
     {
@@ -191,19 +284,52 @@ class DailyCashController extends Controller
         return redirect()->route('daily-cash.show', $day);
     }
 
+    /** Create the day row if missing, then show (e.g. opening next/prev day that has no row yet). */
+    public function openDate(string $date)
+    {
+        $d = Carbon::parse($date)->startOfDay();
+        $periodStart = $this->cashflowPeriodStart($d);
+        $fyEnd = $periodStart->copy()->addYear()->subDay();
+        $maxDate = Carbon::today()->min($fyEnd);
+
+        if ($d->lt($periodStart) || $d->gt($maxDate)) {
+            return redirect()->route('daily-cash.today')
+                ->with('error', 'That date is outside the allowed cash period (from '.$periodStart->format('M j, Y').' through '.$maxDate->format('M j, Y').').');
+        }
+
+        $day = DailyCashDay::firstOrCreate(
+            ['date' => $d->toDateString()],
+            ['opening_balance' => $this->resolveOpeningBalance($d->toDateString())]
+        );
+
+        return redirect()->route('daily-cash.show', $day);
+    }
+
     // Show a single day
     public function show(DailyCashDay $dailyCash)
     {
         $dailyCash->load('entries');
 
-        $prev = DailyCashDay::where('date', '<', $dailyCash->date)->orderByDesc('date')->first();
-        $next = DailyCashDay::where('date', '>', $dailyCash->date)->orderBy('date')->first();
+        $prevWeekNav = $this->weekPrevNav($dailyCash);
+        $nextWeekNav = $this->weekNextNav($dailyCash);
+        $weekStrip = $this->buildWeekStrip($dailyCash);
 
-        $recentDays = DailyCashDay::orderByDesc('date')->take(10)->get();
+        $weekRangeLabel = count($weekStrip) > 0
+            ? $this->formatDayRangeLabel($weekStrip[0]['date'], $weekStrip[count($weekStrip) - 1]['date'])
+            : '';
+
         $bankAccounts = BankAccount::orderBy('bank_name')->get();
         $dayDeposits = Deposit::where('deposit_date', $dailyCash->date)->latest()->get();
 
-        return view('daily-cash.show', compact('dailyCash', 'prev', 'next', 'recentDays', 'bankAccounts', 'dayDeposits'));
+        return view('daily-cash.show', compact(
+            'dailyCash',
+            'prevWeekNav',
+            'nextWeekNav',
+            'weekStrip',
+            'weekRangeLabel',
+            'bankAccounts',
+            'dayDeposits'
+        ));
     }
 
     // Create a specific date's record

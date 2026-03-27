@@ -3,37 +3,73 @@
 
 @section('content')
 
-{{-- Date tab navigation --}}
-<div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
-    @if($prev)
-    <a href="{{ route('daily-cash.show', $prev) }}" class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-chevron-left"></i> {{ $prev->date->format('M d') }}
-    </a>
-    @endif
+{{-- Title row; then [←][one week strip][→]; strip ends at today (no future days) --}}
+<div class="card border-0 shadow-sm mb-2">
+    <div class="card-body py-2 px-2 px-sm-3">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
+            <div class="text-center text-md-start">
+                <span class="fw-semibold fs-6" style="color:#0d6b4f;">{{ $dailyCash->date->format('l') }}</span>
+                <span class="text-muted small ms-1">{{ $dailyCash->date->format('F j, Y') }}</span>
+                @if($dailyCash->date->isToday())
+                    <span class="text-success fw-semibold ms-2">Today</span>
+                @endif
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-1">
+                <a href="{{ route('daily-cash.index', ['tab' => 'daily']) }}" class="btn btn-sm btn-outline-secondary">All days</a>
+                <div class="btn-group btn-group-sm">
+                    <a href="{{ route('daily-cash.index', ['tab' => 'monthly']) }}" class="btn btn-outline-secondary">Monthly</a>
+                    <a href="{{ route('daily-cash.index', ['tab' => 'annual']) }}" class="btn btn-outline-secondary">Annual</a>
+                    <a href="{{ route('daily-cash.today') }}" class="btn btn-success" title="Open today’s cash">Go to today</a>
+                </div>
+            </div>
+        </div>
+        @if($weekRangeLabel !== '')
+        <div class="text-muted small mb-2 text-center text-md-start">{{ $weekRangeLabel }}</div>
+        @endif
 
-    @foreach($recentDays->reverse() as $rd)
-    <a href="{{ route('daily-cash.show', $rd) }}"
-       class="btn btn-sm {{ $rd->id === $dailyCash->id ? 'btn-primary' : 'btn-outline-secondary' }}">
-        {{ $rd->date->format('M d') }}
-        @if($rd->date->isToday()) <span class="badge bg-light text-dark ms-1" style="font-size:0.6rem">Today</span> @endif
-    </a>
-    @endforeach
+        <div class="d-flex align-items-center gap-1">
+            @if($prevWeekNav)
+            <a href="{{ $prevWeekNav['url'] }}" class="btn btn-outline-secondary btn-sm flex-shrink-0 align-self-center" style="width:2.25rem;" title="Previous week ({{ $prevWeekNav['label'] }})"><i class="bi bi-chevron-left"></i></a>
+            @else
+            <span class="btn btn-outline-secondary btn-sm disabled opacity-50 flex-shrink-0 align-self-center" style="width:2.25rem;"><i class="bi bi-chevron-left"></i></span>
+            @endif
 
-    @if($next)
-    <a href="{{ route('daily-cash.show', $next) }}" class="btn btn-sm btn-outline-secondary">
-        {{ $next->date->format('M d') }} <i class="bi bi-chevron-right"></i>
-    </a>
-    @endif
+            <div class="flex-grow-1 min-w-0 overflow-x-auto" style="-webkit-overflow-scrolling:touch;">
+                <div class="d-flex flex-nowrap gap-1 pb-1">
+                    @foreach($weekStrip as $weekDay)
+                        @php
+                            $key = $weekDay['date']->format('Y-m-d');
+                            $isActive = $key === $dailyCash->date->format('Y-m-d');
+                            $hasDay = $weekDay['day'] !== null;
+                            $inRange = $weekDay['inRange'];
+                            $href = $inRange
+                                ? ($hasDay ? route('daily-cash.show', $weekDay['day']) : route('daily-cash.open-date', ['date' => $key]))
+                                : '#';
+                        @endphp
+                        <div class="flex-shrink-0" style="min-width:5.5rem;">
+                        @if($inRange)
+                            <a href="{{ $href }}"
+                               class="btn btn-sm w-100 px-1 py-1 rounded-2 lh-sm {{ $isActive ? 'btn-primary' : ($hasDay ? 'btn-outline-secondary' : 'btn-outline-secondary border-dashed') }}"
+                               title="{{ $weekDay['date']->format('l, F j, Y') }}">
+                                <span class="d-block fw-semibold text-center text-nowrap" style="font-size:0.68rem;">{{ $weekDay['date']->format('F j') }}</span>
+                            </a>
+                        @else
+                            <span class="btn btn-sm btn-light disabled w-100 px-1 py-1 rounded-2 opacity-50 lh-sm" style="pointer-events:none;" title="Outside range">
+                                <span class="d-block text-center text-nowrap" style="font-size:0.68rem;">{{ $weekDay['date']->format('F j') }}</span>
+                            </span>
+                        @endif
+                        </div>
+                    @endforeach
+                </div>
+            </div>
 
-    <a href="{{ route('daily-cash.index', ['tab' => 'monthly']) }}" class="btn btn-sm btn-outline-secondary ms-auto">
-        <i class="bi bi-calendar-month"></i> Monthly
-    </a>
-    <a href="{{ route('daily-cash.index', ['tab' => 'annual']) }}" class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-bar-chart-line"></i> Annual
-    </a>
-    <a href="{{ route('daily-cash.today') }}" class="btn btn-sm btn-success">
-        <i class="bi bi-calendar-check"></i> Today
-    </a>
+            @if($nextWeekNav)
+            <a href="{{ $nextWeekNav['url'] }}" class="btn btn-outline-secondary btn-sm flex-shrink-0 align-self-center" style="width:2.25rem;" title="Next week ({{ $nextWeekNav['label'] }})"><i class="bi bi-chevron-right"></i></a>
+            @else
+            <span class="btn btn-outline-secondary btn-sm disabled opacity-50 flex-shrink-0 align-self-center" style="width:2.25rem;"><i class="bi bi-chevron-right"></i></span>
+            @endif
+        </div>
+    </div>
 </div>
 
 <div class="row g-3">
