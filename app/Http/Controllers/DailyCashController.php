@@ -35,29 +35,85 @@ class DailyCashController extends Controller
     }
 
     /**
-     * Opening for a new day: carry only from prior days within the same period
-     * (Mar 1 → Feb). Each period’s first day starts at 0 unless edited.
+     * Opening for a new day: closing balance after all prior days in the same period,
+     * using the first day’s stored opening as the anchor and summing each prior day’s net
+     * (capital, income, expenses, savings, etc.).
      */
     private function resolveOpeningBalance(string $date): float
     {
-        $day = Carbon::parse($date)->startOfDay();
-        $periodStart = $this->cashflowPeriodStart($day);
+        $target = Carbon::parse($date)->startOfDay();
+        $periodStart = $this->cashflowPeriodStart($target);
 
-        if ($day->equalTo($periodStart)) {
+        if ($target->equalTo($periodStart)) {
             return 0.0;
         }
 
-        $prev = DailyCashDay::query()
-            ->where('date', '<', $day->toDateString())
+        $rows = DailyCashDay::with('entries')
             ->where('date', '>=', $periodStart->toDateString())
-            ->orderByDesc('date')
-            ->first();
+            ->where('date', '<', $target->toDateString())
+            ->orderBy('date')
+            ->get();
 
-        if (! $prev) {
+        if ($rows->isEmpty()) {
             return 0.0;
         }
 
-        return $this->closingBalance($prev);
+        $carry = (float) $rows->first()->opening_balance + $rows->first()->net();
+        foreach ($rows->slice(1)->all() as $row) {
+            $carry += $row->net();
+        }
+
+        return round($carry, 2);
+    }
+
+    /** Keep stored opening_balance on later days aligned after this day’s closing changes. */
+    private function syncOpeningBalancesForwardFrom(DailyCashDay $day): void
+    {
+        $periodStart = $this->cashflowPeriodStart(Carbon::parse($day->date));
+        $fyEnd = $periodStart->copy()->addYear()->subDay();
+        $end = Carbon::today()->min($fyEnd);
+
+        $anchor = $day->fresh(['entries']);
+        if (! $anchor) {
+            return;
+        }
+
+        $prevClosing = round($this->closingBalance($anchor), 2);
+        $d = Carbon::parse($anchor->date)->copy()->addDay();
+
+        while ($d->lte($end)) {
+            $next = DailyCashDay::with('entries')->where('date', $d->toDateString())->first();
+            if ($next) {
+                $dayOpening = round($prevClosing, 2);
+                if (abs((float) $next->opening_balance - $dayOpening) > 0.005) {
+                    $next->update(['opening_balance' => $dayOpening]);
+                }
+                $prevClosing = round($dayOpening + $next->net(), 2);
+            }
+            $d->addDay();
+        }
+    }
+
+    /**
+     * Heal rows that still show ~0 opening while earlier days in the period imply a carry.
+     * Zero-net days already contribute net 0 to the chain; this fixes missed sync / old rows.
+     */
+    private function alignStaleZeroOpening(DailyCashDay $day): void
+    {
+        $t = Carbon::parse($day->date)->startOfDay();
+        if ($t->equalTo($this->cashflowPeriodStart($t))) {
+            return;
+        }
+        if (abs((float) $day->opening_balance) > 0.005) {
+            return;
+        }
+        $expected = $this->resolveOpeningBalance($t->format('Y-m-d'));
+        if (abs($expected) <= 0.005) {
+            return;
+        }
+        $day->update(['opening_balance' => $expected]);
+        $day->opening_balance = $expected;
+        $this->syncOpeningBalancesForwardFrom($day);
     }
 
     /** Whether this calendar day can be opened in Daily Cash (within FY, not future). */
@@ -161,10 +217,11 @@ class DailyCashController extends Controller
         // Always ensure today exists
         $today = Carbon::today()->toDateString();
         if (! DailyCashDay::where('date', $today)->exists()) {
-            DailyCashDay::create([
+            $boot = DailyCashDay::create([
                 'date' => $today,
                 'opening_balance' => $this->resolveOpeningBalance($today),
             ]);
+            $this->syncOpeningBalancesForwardFrom($boot);
         }
 
         $days = null;
@@ -172,13 +229,12 @@ class DailyCashController extends Controller
         $annual = null;
         $filterYear = (int) $request->get('year', now()->year);
         $years = DailyCashDay::selectRaw('YEAR(date) as yr')->groupBy('yr')->orderByDesc('yr')->pluck('yr');
-
         if ($tab === 'monthly') {
             $monthly = $this->buildMonthlySummary($filterYear);
         } elseif ($tab === 'annual') {
             $annual = $this->buildAnnualSummary();
         } else {
-            $days = DailyCashDay::orderByDesc('date')->paginate(30);
+            $days = DailyCashDay::with('entries')->orderByDesc('date')->paginate(30);
         }
 
         return view('daily-cash.index', compact('days', 'monthly', 'annual', 'tab', 'filterYear', 'years'));
@@ -274,10 +330,11 @@ class DailyCashController extends Controller
     {
         $today = Carbon::today()->toDateString();
         if (! DailyCashDay::where('date', $today)->exists()) {
-            DailyCashDay::create([
+            $boot = DailyCashDay::create([
                 'date' => $today,
                 'opening_balance' => $this->resolveOpeningBalance($today),
             ]);
+            $this->syncOpeningBalancesForwardFrom($boot);
         }
         $day = DailyCashDay::where('date', $today)->first();
 
@@ -301,6 +358,9 @@ class DailyCashController extends Controller
             ['date' => $d->toDateString()],
             ['opening_balance' => $this->resolveOpeningBalance($d->toDateString())]
         );
+        if ($day->wasRecentlyCreated) {
+            $this->syncOpeningBalancesForwardFrom($day);
+        }
 
         return redirect()->route('daily-cash.show', $day);
     }
@@ -308,6 +368,9 @@ class DailyCashController extends Controller
     // Show a single day
     public function show(DailyCashDay $dailyCash)
     {
+        $dailyCash->load('entries');
+        $this->alignStaleZeroOpening($dailyCash);
+        $dailyCash->refresh();
         $dailyCash->load('entries');
 
         $prevWeekNav = $this->weekPrevNav($dailyCash);
@@ -340,8 +403,9 @@ class DailyCashController extends Controller
             'date' => $request->date,
             'opening_balance' => $this->resolveOpeningBalance($request->date),
         ]);
+        $this->syncOpeningBalancesForwardFrom($day);
 
-        return redirect()->route('daily-cash.show', $day)->with('success', 'Day created.');
+        return redirect()->route('daily-cash.show', $day)->with('success', 'Day created. Later days in this period were synced if needed.');
     }
 
     // Update opening balance / notes
@@ -361,7 +425,10 @@ class DailyCashController extends Controller
             $dailyCash->update($request->only('opening_balance', 'notes'));
         }
 
-        return back()->with('success', 'Updated.');
+        $dailyCash->refresh();
+        $this->syncOpeningBalancesForwardFrom($dailyCash);
+
+        return back()->with('success', 'Updated. Opening balances on later days in this period were synced.');
     }
 
     // Add an entry to a day
@@ -381,7 +448,9 @@ class DailyCashController extends Controller
             'sort_order' => $max + 1,
         ]);
 
-        return back()->with('success', 'Entry added.');
+        $this->syncOpeningBalancesForwardFrom($dailyCash);
+
+        return back()->with('success', 'Entry added. Later days in this period were synced to the new balances.');
     }
 
     // Update an entry
@@ -399,7 +468,9 @@ class DailyCashController extends Controller
             'amount' => $request->amount,
         ]);
 
-        return back()->with('success', 'Entry updated.');
+        $this->syncOpeningBalancesForwardFrom($dailyCash);
+
+        return back()->with('success', 'Entry updated. Later days in this period were synced to the new balances.');
     }
 
     // Delete an entry
@@ -408,7 +479,9 @@ class DailyCashController extends Controller
         abort_if($entry->daily_cash_day_id !== $dailyCash->id, 404);
         $entry->delete();
 
-        return back()->with('success', 'Entry deleted.');
+        $this->syncOpeningBalancesForwardFrom($dailyCash);
+
+        return back()->with('success', 'Entry deleted. Later days in this period were synced to the new balances.');
     }
 
     // Deposit to bank: creates a Deposit record + SAVINGS entry on this day
@@ -460,6 +533,9 @@ class DailyCashController extends Controller
             ]);
         });
 
-        return back()->with('success', 'Deposit recorded and added to savings entries.');
+        $dailyCash->refresh();
+        $this->syncOpeningBalancesForwardFrom($dailyCash);
+
+        return back()->with('success', 'Deposit recorded. Later days in this period were synced to the new balances.');
     }
 }

@@ -3,6 +3,11 @@
 
 @section('content')
 
+@php
+    $carriedOpeningBalance = (float) $dailyCash->opening_balance;
+    $totalAvailableCash = round($carriedOpeningBalance + $dailyCash->net(), 2);
+@endphp
+
 {{-- Title row; then [←][one week strip][→]; strip ends at today (no future days) --}}
 <div class="card border-0 shadow-sm mb-2">
     <div class="card-body py-2 px-2 px-sm-3">
@@ -72,13 +77,19 @@
     </div>
 </div>
 
+<div class="alert alert-warning alert-dismissible fade show mb-2 py-2 small" role="alert">
+    <i class="bi bi-link-45deg"></i>
+    <strong>Carry-forward chain.</strong>
+    Adding or changing entries, recording a deposit, or correcting starting cash on this date updates this day’s closing and <strong>automatically adjusts opening balances on all later dates</strong> in the same cash period (through today). You will be asked to confirm before each save.
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+
 <div class="row g-3">
 
     {{-- LEFT: Daily Summary --}}
     <div class="col-lg-3">
 
-        {{-- Total Available Cash = opening + net (closing balance) --}}
-        @php $closing = (float)$dailyCash->opening_balance + $dailyCash->net(); @endphp
+        {{-- Total Available Cash = carried opening (prior days in period) + today’s net --}}
         <div class="card mb-3">
             <div class="card-header py-2 d-flex align-items-center gap-2">
                 <i class="bi bi-wallet2 text-success"></i>
@@ -87,8 +98,9 @@
             <div class="card-body py-3 text-center">
                 {{-- Big amount --}}
                 <div style="font-size:1.8rem;font-weight:700;color:#007A5E;">
-                    ₱{{ number_format($closing, 2) }}
+                    ₱{{ number_format($totalAvailableCash, 2) }}
                 </div>
+                <div class="text-muted small mt-1">After prior days’ net, expenses, savings &amp; other entries in this period</div>
                 <button data-bs-toggle="modal" data-bs-target="#editCashModal"
                         class="btn btn-xs btn-outline-secondary mt-1"
                         style="font-size:0.72rem;padding:1px 8px;">
@@ -105,6 +117,10 @@
             <div class="card-body p-0">
                 <table class="table table-sm mb-0" style="font-size:0.8rem;">
                     <tbody>
+                        <tr class="border-bottom">
+                            <td class="ps-3 text-muted small">Carried forward</td>
+                            <td class="text-end pe-3">₱{{ number_format($carriedOpeningBalance, 2) }}</td>
+                        </tr>
                         <tr>
                             <td class="ps-3"><span class="badge bg-primary" style="font-size:0.65rem;">Capital</span></td>
                             <td class="text-end pe-3">₱{{ number_format($dailyCash->capital(), 2) }}</td>
@@ -250,7 +266,7 @@
                                     <form method="POST"
                                           action="{{ route('daily-cash.entries.destroy', [$dailyCash, $entry]) }}"
                                           class="d-inline"
-                                          onsubmit="return confirm('Delete this entry?')">
+                                          onsubmit="return dailyCashConfirmDeleteEntry()">
                                         @csrf @method('DELETE')
                                         <button class="btn btn-outline-danger py-0 px-2"
                                                 style="font-size:0.75rem;">
@@ -292,7 +308,8 @@
 {{-- Add Entry Modal --}}
 <div class="modal fade" id="addEntryModal" tabindex="-1">
     <div class="modal-dialog">
-        <form method="POST" action="{{ route('daily-cash.entries.store', $dailyCash) }}">
+        <form method="POST" action="{{ route('daily-cash.entries.store', $dailyCash) }}"
+              onsubmit="return dailyCashConfirmCarryImpact()">
             @csrf
             <div class="modal-content">
                 <div class="modal-header">
@@ -333,7 +350,8 @@
 {{-- Edit Total Available Cash Modal --}}
 <div class="modal fade" id="editCashModal" tabindex="-1">
     <div class="modal-dialog modal-sm">
-        <form method="POST" action="{{ route('daily-cash.update', $dailyCash) }}">
+        <form method="POST" action="{{ route('daily-cash.update', $dailyCash) }}"
+              onsubmit="return dailyCashConfirmCarryImpact()">
             @csrf @method('PUT')
             <input type="hidden" name="total_cash_mode" value="1">
             <div class="modal-content">
@@ -344,11 +362,11 @@
                 <div class="modal-body">
                     <label class="form-label small fw-bold">Actual Total Available Cash (₱)</label>
                     <input type="number" name="total_cash" step="0.01" min="0"
-                           value="{{ (float) $closing }}"
+                           value="{{ (float) $totalAvailableCash }}"
                            class="form-control"
                            placeholder="Enter actual cash on hand"
                            required>
-                    <div class="form-text mt-1">Enter the actual cash amount you have on hand. The system will adjust automatically.</div>
+                    <div class="form-text mt-1">Enter the actual cash on hand. We set today’s starting balance so it matches; later days in the period update from the new closing total.</div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -362,7 +380,8 @@
 {{-- Deposit to Bank Modal --}}
 <div class="modal fade" id="depositModal" tabindex="-1">
     <div class="modal-dialog">
-        <form method="POST" action="{{ route('daily-cash.deposit', $dailyCash) }}">
+        <form method="POST" action="{{ route('daily-cash.deposit', $dailyCash) }}"
+              onsubmit="return dailyCashConfirmCarryImpact()">
             @csrf
             <div class="modal-content">
                 <div class="modal-header">
@@ -392,8 +411,7 @@
                             <input type="number" name="amount" step="0.01" min="0.01"
                                    class="form-control form-control-sm"
                                    placeholder="0.00" required>
-                            @php $closingHint = (float)$dailyCash->opening_balance + $dailyCash->net(); @endphp
-                            <div class="form-text">Total available cash today: <strong>₱{{ number_format($closingHint, 2) }}</strong></div>
+                            <div class="form-text">Total available cash today: <strong>₱{{ number_format($totalAvailableCash, 2) }}</strong></div>
                         </div>
 
                         <div class="col-12">
@@ -424,7 +442,7 @@
 {{-- Edit Entry Modal --}}
 <div class="modal fade" id="editEntryModal" tabindex="-1">
     <div class="modal-dialog">
-        <form method="POST" id="editEntryForm">
+        <form method="POST" id="editEntryForm" onsubmit="return dailyCashConfirmCarryImpact()">
             @csrf @method('PUT')
             <div class="modal-content">
                 <div class="modal-header">
@@ -464,6 +482,16 @@
 
 @push('scripts')
 <script>
+function dailyCashConfirmCarryImpact() {
+    return window.confirm(
+        'This will recalculate this day’s closing balance and automatically update opening balances on all later days in this cash period (including today), so carried cash stays in sync.\n\nContinue?'
+    );
+}
+function dailyCashConfirmDeleteEntry() {
+    return window.confirm(
+        'Delete this entry?\n\nThis will also recalculate this day and update opening balances on all later days in this cash period.\n\nContinue?'
+    );
+}
 function editEntry(id, type, description, amount) {
     document.getElementById('editEntryForm').action =
         '{{ url("daily-cash/".$dailyCash->id."/entries") }}/' + id;

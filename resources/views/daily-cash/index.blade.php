@@ -144,7 +144,8 @@
 {{-- New day modal --}}
 <div class="modal fade" id="newDayModal" tabindex="-1">
     <div class="modal-dialog modal-sm">
-        <form method="POST" action="{{ route('daily-cash.store') }}">
+        <form method="POST" action="{{ route('daily-cash.store') }}"
+              onsubmit="return confirm('Opening this date sets its starting balance from prior days in the period and may update opening balances on later dates. Continue?')">
             @csrf
             <div class="modal-content">
                 <div class="modal-header">
