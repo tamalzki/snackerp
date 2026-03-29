@@ -162,7 +162,7 @@
         {{-- Deposit to Bank --}}
         <div class="mt-3 d-grid">
             <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#depositModal">
-                <i class="bi bi-bank"></i> Deposit to Bank / Cash Account
+                <i class="bi bi-bank"></i> Deposit Total Cash to Bank
             </button>
         </div>
 
