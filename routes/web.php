@@ -5,6 +5,7 @@ use App\Http\Controllers\BranchController;
 use App\Http\Controllers\CashAccountController;
 use App\Http\Controllers\ConsignmentController;
 use App\Http\Controllers\DailyCashController;
+use App\Http\Controllers\DailyCashStatementController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepositController;
 use App\Http\Controllers\ExpenseController;
@@ -81,9 +82,16 @@ Route::middleware(['auth'])->group(function () {
     Route::get('daily-cash/today', [DailyCashController::class, 'today'])->name('daily-cash.today');
     Route::get('daily-cash', [DailyCashController::class, 'index'])->name('daily-cash.index');
     Route::post('daily-cash', [DailyCashController::class, 'store'])->name('daily-cash.store');
+    Route::post('daily-cash/subcategory-override', [DailyCashController::class, 'bulkSubcategoryOverride'])->name('daily-cash.subcategory-override');
     Route::get('daily-cash/open/{date}', [DailyCashController::class, 'openDate'])
         ->where('date', '[0-9]{4}-[0-9]{2}-[0-9]{2}')
         ->name('daily-cash.open-date');
+    Route::get('daily-cash/guide', [DailyCashController::class, 'guide'])->name('daily-cash.guide');
+    Route::get('daily-cash/statements/income', [DailyCashStatementController::class, 'income'])->name('daily-cash.statements.income');
+    Route::get('daily-cash/statements/expenses', [DailyCashStatementController::class, 'expenses'])->name('daily-cash.statements.expenses');
+    Route::get('daily-cash/statements/discretionary', [DailyCashStatementController::class, 'discretionary'])->name('daily-cash.statements.discretionary');
+    Route::get('daily-cash/statements/savings', [DailyCashStatementController::class, 'savings'])->name('daily-cash.statements.savings');
+    Route::post('daily-cash/statements/entry', [DailyCashStatementController::class, 'storeEntry'])->name('daily-cash.statements.store-entry');
     Route::get('daily-cash/{dailyCash}', [DailyCashController::class, 'show'])->name('daily-cash.show');
     Route::put('daily-cash/{dailyCash}', [DailyCashController::class, 'update'])->name('daily-cash.update');
     Route::post('daily-cash/{dailyCash}/entries', [DailyCashController::class, 'storeEntry'])->name('daily-cash.entries.store');

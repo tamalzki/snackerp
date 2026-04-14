@@ -7,130 +7,23 @@ use App\Models\CashAccount;
 use App\Models\DailyCashDay;
 use App\Models\DailyCashEntry;
 use App\Models\Deposit;
+use App\Services\DailyCashLedgerService;
+use App\Support\CashflowSubcategoryClassifier;
+use App\Support\DailyCashflowCategories;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class DailyCashController extends Controller
 {
-    // Compute the closing balance of a day (opening + net)
-    private function closingBalance(DailyCashDay $day): float
-    {
-        $day->load('entries');
-
-        return (float) $day->opening_balance + $day->net();
-    }
-
-    /** First day of the cashflow period that contains $date (e.g. Mar 1 each year). */
-    private function cashflowPeriodStart(Carbon $date): Carbon
-    {
-        $m = (int) config('daily_cashflow.period_start_month', 3);
-        $d = (int) config('daily_cashflow.period_start_day', 1);
-
-        if ($date->month > $m || ($date->month === $m && $date->day >= $d)) {
-            return Carbon::create($date->year, $m, $d)->startOfDay();
-        }
-
-        return Carbon::create($date->year - 1, $m, $d)->startOfDay();
-    }
-
-    /**
-     * Opening for a new day: closing balance after all prior days in the same period,
-     * using the first day’s stored opening as the anchor and summing each prior day’s net
-     * (capital, income, expenses, savings, etc.).
-     */
-    private function resolveOpeningBalance(string $date): float
-    {
-        $target = Carbon::parse($date)->startOfDay();
-        $periodStart = $this->cashflowPeriodStart($target);
-
-        if ($target->equalTo($periodStart)) {
-            return 0.0;
-        }
-
-        $rows = DailyCashDay::with('entries')
-            ->where('date', '>=', $periodStart->toDateString())
-            ->where('date', '<', $target->toDateString())
-            ->orderBy('date')
-            ->get();
-
-        if ($rows->isEmpty()) {
-            return 0.0;
-        }
-
-        $carry = (float) $rows->first()->opening_balance + $rows->first()->net();
-        foreach ($rows->slice(1)->all() as $row) {
-            $carry += $row->net();
-        }
-
-        return round($carry, 2);
-    }
-
-    /** Keep stored opening_balance on later days aligned after this day’s closing changes. */
-    private function syncOpeningBalancesForwardFrom(DailyCashDay $day): void
-    {
-        $periodStart = $this->cashflowPeriodStart(Carbon::parse($day->date));
-        $fyEnd = $periodStart->copy()->addYear()->subDay();
-        $end = Carbon::today()->min($fyEnd);
-
-        $anchor = $day->fresh(['entries']);
-        if (! $anchor) {
-            return;
-        }
-
-        $prevClosing = round($this->closingBalance($anchor), 2);
-        $d = Carbon::parse($anchor->date)->copy()->addDay();
-
-        while ($d->lte($end)) {
-            $next = DailyCashDay::with('entries')->where('date', $d->toDateString())->first();
-            if ($next) {
-                $dayOpening = round($prevClosing, 2);
-                if (abs((float) $next->opening_balance - $dayOpening) > 0.005) {
-                    $next->update(['opening_balance' => $dayOpening]);
-                }
-                $prevClosing = round($dayOpening + $next->net(), 2);
-            }
-            $d->addDay();
-        }
-    }
-
-    /**
-     * Heal rows that still show ~0 opening while earlier days in the period imply a carry.
-     * Zero-net days already contribute net 0 to the chain; this fixes missed sync / old rows.
-     */
-    private function alignStaleZeroOpening(DailyCashDay $day): void
-    {
-        $t = Carbon::parse($day->date)->startOfDay();
-        if ($t->equalTo($this->cashflowPeriodStart($t))) {
-            return;
-        }
-        if (abs((float) $day->opening_balance) > 0.005) {
-            return;
-        }
-        $expected = $this->resolveOpeningBalance($t->format('Y-m-d'));
-        if (abs($expected) <= 0.005) {
-            return;
-        }
-        $day->update(['opening_balance' => $expected]);
-        $day->opening_balance = $expected;
-        $this->syncOpeningBalancesForwardFrom($day);
-    }
-
-    /** Whether this calendar day can be opened in Daily Cash (within FY, not future). */
-    private function isDayEncodable(Carbon $d): bool
-    {
-        $periodStart = $this->cashflowPeriodStart($d);
-        $fyEnd = $periodStart->copy()->addYear()->subDay();
-        $maxNav = Carbon::today()->min($fyEnd);
-
-        return $d->gte($periodStart) && $d->lte($maxNav);
-    }
+    public function __construct(private DailyCashLedgerService $ledger) {}
 
     /** Same weekday, previous week (arrow left). */
     private function weekPrevNav(DailyCashDay $dailyCash): ?array
     {
         $prev = Carbon::parse($dailyCash->date)->copy()->subWeek();
-        if (! $this->isDayEncodable($prev)) {
+        if (! $this->ledger->isDayEncodable($prev)) {
             return null;
         }
 
@@ -148,7 +41,7 @@ class DailyCashController extends Controller
     private function weekNextNav(DailyCashDay $dailyCash): ?array
     {
         $next = Carbon::parse($dailyCash->date)->copy()->addWeek();
-        if (! $this->isDayEncodable($next)) {
+        if (! $this->ledger->isDayEncodable($next)) {
             return null;
         }
 
@@ -187,7 +80,7 @@ class DailyCashController extends Controller
             $strip[] = [
                 'date' => $d->copy(),
                 'day' => $existing->get($key),
-                'inRange' => $this->isDayEncodable($d),
+                'inRange' => $this->ledger->isDayEncodable($d),
             ];
         }
 
@@ -219,25 +112,88 @@ class DailyCashController extends Controller
         if (! DailyCashDay::where('date', $today)->exists()) {
             $boot = DailyCashDay::create([
                 'date' => $today,
-                'opening_balance' => $this->resolveOpeningBalance($today),
+                'opening_balance' => $this->ledger->resolveOpeningBalance($today),
             ]);
-            $this->syncOpeningBalancesForwardFrom($boot);
+            $this->ledger->syncOpeningBalancesForwardFrom($boot);
         }
 
         $days = null;
-        $monthly = null;
+        $monthlyMatrix = null;
         $annual = null;
         $filterYear = (int) $request->get('year', now()->year);
         $years = DailyCashDay::selectRaw('YEAR(date) as yr')->groupBy('yr')->orderByDesc('yr')->pluck('yr');
         if ($tab === 'monthly') {
-            $monthly = $this->buildMonthlySummary($filterYear);
+            $monthlyMatrix = $this->buildMonthlyCashFlowMatrix($filterYear);
         } elseif ($tab === 'annual') {
             $annual = $this->buildAnnualSummary();
         } else {
             $days = DailyCashDay::with('entries')->orderByDesc('date')->paginate(30);
         }
 
-        return view('daily-cash.index', compact('days', 'monthly', 'annual', 'tab', 'filterYear', 'years'));
+        $subcategoryOptionsByType = [];
+        $subcategoryLabelsByType = [];
+        foreach (array_keys(DailyCashEntry::$types) as $t) {
+            $subcategoryOptionsByType[$t] = CashflowSubcategoryClassifier::designatedEditOptionsForType($t);
+            $subcategoryLabelsByType[$t] = CashflowSubcategoryClassifier::designatedLabelsMapForType($t);
+        }
+
+        return view('daily-cash.index', compact('days', 'monthlyMatrix', 'annual', 'tab', 'filterYear', 'years', 'subcategoryOptionsByType', 'subcategoryLabelsByType'));
+    }
+
+    /** Apply subcategory override to all ledger lines matching type + description + current effective subcategory for a calendar year. */
+    public function bulkSubcategoryOverride(Request $request)
+    {
+        $validated = $request->validate([
+            'year' => ['required', 'integer', 'min:2000', 'max:2100'],
+            'type' => ['required', 'string', Rule::in(array_keys(DailyCashEntry::$types))],
+            'description_norm' => ['required', 'string', 'max:2000'],
+            'line_subcategory_key' => ['required', 'string', 'max:64'],
+            'subcategory_key' => ['nullable', 'string', 'max:64'],
+            'tab' => ['nullable', 'string', Rule::in(['daily', 'monthly', 'annual'])],
+        ]);
+
+        $type = $validated['type'];
+        $norm = $this->normalizeLedgerDescriptionKey($validated['description_norm']);
+        $lineKey = $validated['line_subcategory_key'];
+        $newKey = $validated['subcategory_key'] ?? '';
+        $newOverride = $newKey === '' ? null : $newKey;
+
+        if ($newOverride !== null && ! CashflowSubcategoryClassifier::isValidKeyForType($type, $newOverride)) {
+            return redirect()->route('daily-cash.index', [
+                'tab' => $validated['tab'] ?? 'monthly',
+                'year' => $validated['year'],
+            ])->withErrors(['subcategory' => 'That subcategory is not valid for this entry type.']);
+        }
+
+        $ids = DailyCashEntry::query()
+            ->where('type', $type)
+            ->whereHas('day', fn ($q) => $q->whereYear('date', $validated['year']))
+            ->get()
+            ->filter(function (DailyCashEntry $e) use ($norm, $lineKey) {
+                if ($this->normalizeLedgerDescriptionKey((string) $e->description) !== $norm) {
+                    return false;
+                }
+                $eff = CashflowSubcategoryClassifier::resolve($e->type, (string) $e->description, $e->subcategory_override)['key'];
+
+                return $eff === $lineKey;
+            })
+            ->pluck('id');
+
+        if ($ids->isEmpty()) {
+            return redirect()->route('daily-cash.index', [
+                'tab' => $validated['tab'] ?? 'monthly',
+                'year' => $validated['year'],
+            ])->with('warning', 'No matching lines were updated. Refresh and try again if the report changed.');
+        }
+
+        DailyCashEntry::query()->whereIn('id', $ids)->update(['subcategory_override' => $newOverride]);
+
+        $n = $ids->count();
+
+        return redirect()->route('daily-cash.index', [
+            'tab' => $validated['tab'] ?? 'monthly',
+            'year' => $validated['year'],
+        ])->with('success', 'Subcategory updated for '.$n.' ledger line'.($n === 1 ? '' : 's').'.');
     }
 
     private function entryTotals($entries): array
@@ -254,39 +210,148 @@ class DailyCashController extends Controller
         ];
     }
 
-    private function buildMonthlySummary(int $year): array
+    /** Collapse whitespace; compare case-insensitively by uppercasing (monthly/yearly grouping). */
+    private function normalizeLedgerDescriptionKey(string $description): string
     {
-        $rows = [];
-        for ($m = 1; $m <= 12; $m++) {
-            $days = DailyCashDay::with('entries')
-                ->whereYear('date', $year)
-                ->whereMonth('date', $m)
-                ->orderBy('date')
-                ->get();
+        $s = trim(preg_replace('/\s+/u', ' ', $description));
 
-            if ($days->isEmpty()) {
-                continue;
-            }
+        return mb_strtoupper($s, 'UTF-8');
+    }
 
-            $allEntries = $days->flatMap(fn ($d) => $d->entries);
-            $totals = $this->entryTotals($allEntries);
-
-            // Build day-level rows for the accordion detail
-            $dayRows = $days->map(function ($day) {
-                $t = $this->entryTotals($day->entries);
-
-                return array_merge(['day' => $day], $t);
-            })->all();
-
-            $rows[] = array_merge(
-                ['label' => Carbon::createFromDate($year, $m, 1)->format('F Y'),
-                    'month_key' => "m{$year}{$m}",
-                    'days' => $dayRows],
-                $totals
-            );
+    private function titleCaseDescriptionLabel(string $normalizedUpper): string
+    {
+        if ($normalizedUpper === '') {
+            return '';
         }
 
-        return $rows;
+        $lower = mb_strtolower($normalizedUpper, 'UTF-8');
+
+        return mb_convert_case($lower, MB_CASE_TITLE, 'UTF-8');
+    }
+
+    /** e.g. "Income Water", "Expenses Water Bill" — type + normalized description text. */
+    private function reportGroupLabel(string $type, string $normalizedDescriptionKey): string
+    {
+        $typeLabel = DailyCashEntry::$types[$type] ?? $type;
+        $pretty = $this->titleCaseDescriptionLabel($normalizedDescriptionKey);
+        if ($pretty === '') {
+            return $typeLabel.' (no description)';
+        }
+
+        return trim($typeLabel.' '.$pretty);
+    }
+
+    /**
+     * Monthly/yearly breakdown: same type + same description (ignoring case/extra spaces) = one row.
+     *
+     * @param  \Illuminate\Support\Collection<int, DailyCashEntry>|\Illuminate\Database\Eloquent\Collection<int, DailyCashEntry>  $entries
+     * @return list<array{type: string, label: string, description_norm: string, subcategory_key: string, subcategory_label: string, total: float}>
+     */
+    private function aggregateEntriesByNormalizedDescription($entries): array
+    {
+        $groups = [];
+        foreach ($entries as $e) {
+            $norm = $this->normalizeLedgerDescriptionKey((string) $e->description);
+            $sub = CashflowSubcategoryClassifier::resolve($e->type, (string) $e->description, $e->subcategory_override);
+            $key = $e->type.'|'.$norm.'|'.$sub['key'];
+            if (! isset($groups[$key])) {
+                $groups[$key] = [
+                    'type' => $e->type,
+                    'label' => $this->reportGroupLabel($e->type, $norm),
+                    'description_norm' => $norm,
+                    'subcategory_key' => $sub['key'],
+                    'subcategory_label' => $sub['label'],
+                    'total' => 0.0,
+                ];
+            }
+            $groups[$key]['total'] += (float) $e->amount;
+        }
+        $list = array_values($groups);
+        $typeOrder = array_keys(DailyCashEntry::$types);
+        usort($list, function ($a, $b) use ($typeOrder) {
+            $ia = array_search($a['type'], $typeOrder, true);
+            $ib = array_search($b['type'], $typeOrder, true);
+            $ia = $ia === false ? 99 : $ia;
+            $ib = $ib === false ? 99 : $ib;
+            if ($ia !== $ib) {
+                return $ia <=> $ib;
+            }
+            $sc = strcmp((string) ($a['subcategory_label'] ?? ''), (string) ($b['subcategory_label'] ?? ''));
+            if ($sc !== 0) {
+                return $sc;
+            }
+
+            return $b['total'] <=> $a['total'];
+        });
+
+        return $list;
+    }
+
+    /**
+     * Spreadsheet-style monthly grid: rows = type + normalized description, columns = Jan–Dec.
+     *
+     * @return array{year: int, lines: list<array{type: string, description_norm: string, subcategory_key: string, subcategory_label: string, description_display: string, amounts: array<int, float>, row_total: float}>, net_by_month: array<int, float>, year_total_net: float}
+     */
+    private function buildMonthlyCashFlowMatrix(int $year): array
+    {
+        $entries = DailyCashEntry::query()
+            ->with('day')
+            ->whereHas('day', fn ($q) => $q->whereYear('date', $year))
+            ->get();
+
+        $linesMap = [];
+        foreach ($entries as $e) {
+            $m = (int) $e->day->date->format('n');
+            $norm = $this->normalizeLedgerDescriptionKey((string) $e->description);
+            $sub = CashflowSubcategoryClassifier::resolve($e->type, (string) $e->description, $e->subcategory_override);
+            $key = $e->type.'|'.$norm.'|'.$sub['key'];
+            if (! isset($linesMap[$key])) {
+                $linesMap[$key] = [
+                    'type' => $e->type,
+                    'description_norm' => $norm,
+                    'subcategory_key' => $sub['key'],
+                    'subcategory_label' => $sub['label'],
+                    'description_display' => $this->titleCaseDescriptionLabel($norm) ?: '—',
+                    'amounts' => array_fill(1, 12, 0.0),
+                ];
+            }
+            $linesMap[$key]['amounts'][$m] += (float) $e->amount;
+        }
+
+        $typeOrder = array_keys(DailyCashEntry::$types);
+        $lines = array_values($linesMap);
+        usort($lines, function ($a, $b) use ($typeOrder) {
+            $ia = array_search($a['type'], $typeOrder, true);
+            $ib = array_search($b['type'], $typeOrder, true);
+            $ia = $ia === false ? 99 : $ia;
+            $ib = $ib === false ? 99 : $ib;
+            if ($ia !== $ib) {
+                return $ia <=> $ib;
+            }
+            $sc = strcmp((string) ($a['subcategory_label'] ?? ''), (string) ($b['subcategory_label'] ?? ''));
+            if ($sc !== 0) {
+                return $sc;
+            }
+
+            return strcmp($a['description_display'], $b['description_display']);
+        });
+
+        foreach ($lines as $i => $_) {
+            $lines[$i]['row_total'] = round(array_sum($lines[$i]['amounts']), 2);
+        }
+
+        $netByMonth = array_fill(1, 12, 0.0);
+        for ($m = 1; $m <= 12; $m++) {
+            $subset = $entries->filter(fn ($e) => (int) $e->day->date->format('n') === $m);
+            $netByMonth[$m] = $subset->isEmpty() ? 0.0 : round((float) ($this->entryTotals($subset)['net'] ?? 0.0), 2);
+        }
+
+        return [
+            'year' => $year,
+            'lines' => $lines,
+            'net_by_month' => $netByMonth,
+            'year_total_net' => round(array_sum($netByMonth), 2),
+        ];
     }
 
     private function buildAnnualSummary(): array
@@ -295,29 +360,16 @@ class DailyCashController extends Controller
         $years = DailyCashDay::selectRaw('YEAR(date) as yr')->groupBy('yr')->orderByDesc('yr')->pluck('yr');
 
         foreach ($years as $year) {
-            $monthRows = [];
-            for ($m = 1; $m <= 12; $m++) {
-                $days = DailyCashDay::with('entries')
-                    ->whereYear('date', $year)
-                    ->whereMonth('date', $m)
-                    ->orderBy('date')
-                    ->get();
-                if ($days->isEmpty()) {
-                    continue;
-                }
-                $allEntries = $days->flatMap(fn ($d) => $d->entries);
-                $t = $this->entryTotals($allEntries);
-                $monthRows[] = array_merge(
-                    ['label' => Carbon::createFromDate($year, $m, 1)->format('F'), 'year' => $year, 'month' => $m],
-                    $t
-                );
-            }
-
             $allEntries = DailyCashEntry::whereHas('day', fn ($q) => $q->whereYear('date', $year))->get();
             $totals = $this->entryTotals($allEntries);
 
             $rows[] = array_merge(
-                ['label' => (string) $year, 'year_key' => "y{$year}", 'months' => $monthRows],
+                [
+                    'label' => (string) $year,
+                    'year' => (int) $year,
+                    'year_key' => "y{$year}",
+                    'report_rows' => $this->aggregateEntriesByNormalizedDescription($allEntries),
+                ],
                 $totals
             );
         }
@@ -332,9 +384,9 @@ class DailyCashController extends Controller
         if (! DailyCashDay::where('date', $today)->exists()) {
             $boot = DailyCashDay::create([
                 'date' => $today,
-                'opening_balance' => $this->resolveOpeningBalance($today),
+                'opening_balance' => $this->ledger->resolveOpeningBalance($today),
             ]);
-            $this->syncOpeningBalancesForwardFrom($boot);
+            $this->ledger->syncOpeningBalancesForwardFrom($boot);
         }
         $day = DailyCashDay::where('date', $today)->first();
 
@@ -345,7 +397,7 @@ class DailyCashController extends Controller
     public function openDate(string $date)
     {
         $d = Carbon::parse($date)->startOfDay();
-        $periodStart = $this->cashflowPeriodStart($d);
+        $periodStart = $this->ledger->cashflowPeriodStart($d);
         $fyEnd = $periodStart->copy()->addYear()->subDay();
         $maxDate = Carbon::today()->min($fyEnd);
 
@@ -356,20 +408,26 @@ class DailyCashController extends Controller
 
         $day = DailyCashDay::firstOrCreate(
             ['date' => $d->toDateString()],
-            ['opening_balance' => $this->resolveOpeningBalance($d->toDateString())]
+            ['opening_balance' => $this->ledger->resolveOpeningBalance($d->toDateString())]
         );
         if ($day->wasRecentlyCreated) {
-            $this->syncOpeningBalancesForwardFrom($day);
+            $this->ledger->syncOpeningBalancesForwardFrom($day);
         }
 
         return redirect()->route('daily-cash.show', $day);
+    }
+
+    /** Workbook-style landing page (matches spreadsheet “Guide” tab). */
+    public function guide()
+    {
+        return view('daily-cash.guide');
     }
 
     // Show a single day
     public function show(DailyCashDay $dailyCash)
     {
         $dailyCash->load('entries');
-        $this->alignStaleZeroOpening($dailyCash);
+        $this->ledger->alignStaleZeroOpening($dailyCash);
         $dailyCash->refresh();
         $dailyCash->load('entries');
 
@@ -384,6 +442,12 @@ class DailyCashController extends Controller
         $bankAccounts = BankAccount::orderBy('bank_name')->get();
         $dayDeposits = Deposit::where('deposit_date', $dailyCash->date)->latest()->get();
 
+        $cashEntryFormMeta = ['labels' => [], 'groups' => []];
+        foreach (array_keys(DailyCashEntry::$types) as $t) {
+            $cashEntryFormMeta['labels'][$t] = CashflowSubcategoryClassifier::designatedLabelsMapForType($t);
+            $cashEntryFormMeta['groups'][$t] = DailyCashflowCategories::categoryFormGroupsForType($t);
+        }
+
         return view('daily-cash.show', compact(
             'dailyCash',
             'prevWeekNav',
@@ -391,7 +455,8 @@ class DailyCashController extends Controller
             'weekStrip',
             'weekRangeLabel',
             'bankAccounts',
-            'dayDeposits'
+            'dayDeposits',
+            'cashEntryFormMeta'
         ));
     }
 
@@ -401,9 +466,9 @@ class DailyCashController extends Controller
         $request->validate(['date' => 'required|date|unique:daily_cash_days,date']);
         $day = DailyCashDay::create([
             'date' => $request->date,
-            'opening_balance' => $this->resolveOpeningBalance($request->date),
+            'opening_balance' => $this->ledger->resolveOpeningBalance($request->date),
         ]);
-        $this->syncOpeningBalancesForwardFrom($day);
+        $this->ledger->syncOpeningBalancesForwardFrom($day);
 
         return redirect()->route('daily-cash.show', $day)->with('success', 'Day created. Later days in this period were synced if needed.');
     }
@@ -415,7 +480,12 @@ class DailyCashController extends Controller
             $request->validate(['total_cash' => 'required|numeric|min:0']);
             // Back-calculate: opening_balance = total_cash - net
             $dailyCash->load('entries');
-            $openingBalance = (float) $request->total_cash - $dailyCash->net();
+            $openingBalance = round((float) $request->total_cash - $dailyCash->net(), 2);
+            if ($openingBalance < 0) {
+                return back()->withErrors([
+                    'total_cash' => 'That total is lower than today’s net from entries. Use a larger figure or adjust the ledger lines first.',
+                ]);
+            }
             $dailyCash->update(['opening_balance' => $openingBalance]);
         } else {
             $request->validate([
@@ -426,7 +496,7 @@ class DailyCashController extends Controller
         }
 
         $dailyCash->refresh();
-        $this->syncOpeningBalancesForwardFrom($dailyCash);
+        $this->ledger->syncOpeningBalancesForwardFrom($dailyCash);
 
         return back()->with('success', 'Updated. Opening balances on later days in this period were synced.');
     }
@@ -435,20 +505,34 @@ class DailyCashController extends Controller
     public function storeEntry(Request $request, DailyCashDay $dailyCash)
     {
         $request->validate([
-            'type' => 'required|in:CAPITAL,INCOME,EXPENSES,PURCHASES,DISCRETIONARY,SAVINGS,OTHER',
+            'type' => ['required', 'string', Rule::in(array_merge(array_keys(DailyCashEntry::$types), ['CASH_FROM_BANK']))],
             'description' => 'required|string|max:255',
             'amount' => 'required|numeric|min:0.01',
+            'category_preset' => 'nullable|string|max:64',
+            'category_custom_piece' => 'nullable|string|max:120',
+            'subcategory_key' => 'nullable|string|max:64',
         ]);
+
+        $isBank = $request->type === 'CASH_FROM_BANK';
+        $type = $isBank ? 'INCOME' : $request->type;
+
+        [$category, $subcategoryOverride] = DailyCashflowCategories::resolveCategoryAndSubcategoryForEntryRequest(
+            $request,
+            $type,
+            $isBank
+        );
 
         $max = $dailyCash->entries()->max('sort_order') ?? 0;
         $dailyCash->entries()->create([
-            'type' => $request->type,
+            'type' => $type,
+            'category' => $category,
+            'subcategory_override' => $subcategoryOverride,
             'description' => strtoupper($request->description),
             'amount' => $request->amount,
             'sort_order' => $max + 1,
         ]);
 
-        $this->syncOpeningBalancesForwardFrom($dailyCash);
+        $this->ledger->syncOpeningBalancesForwardFrom($dailyCash);
 
         return back()->with('success', 'Entry added. Later days in this period were synced to the new balances.');
     }
@@ -458,17 +542,32 @@ class DailyCashController extends Controller
     {
         abort_if($entry->daily_cash_day_id !== $dailyCash->id, 404);
         $request->validate([
-            'type' => 'required|in:CAPITAL,INCOME,EXPENSES,PURCHASES,DISCRETIONARY,SAVINGS,OTHER',
+            'type' => ['required', 'string', Rule::in(array_merge(array_keys(DailyCashEntry::$types), ['CASH_FROM_BANK']))],
             'description' => 'required|string|max:255',
             'amount' => 'required|numeric|min:0.01',
-        ]);
-        $entry->update([
-            'type' => $request->type,
-            'description' => strtoupper($request->description),
-            'amount' => $request->amount,
+            'category_preset' => 'nullable|string|max:64',
+            'category_custom_piece' => 'nullable|string|max:120',
+            'subcategory_key' => 'nullable|string|max:64',
         ]);
 
-        $this->syncOpeningBalancesForwardFrom($dailyCash);
+        $isBank = $request->type === 'CASH_FROM_BANK';
+        $type = $isBank ? 'INCOME' : $request->type;
+
+        [$category, $subcategoryOverride] = DailyCashflowCategories::resolveCategoryAndSubcategoryForEntryRequest(
+            $request,
+            $type,
+            $isBank
+        );
+
+        $entry->update([
+            'type' => $type,
+            'category' => $category,
+            'description' => strtoupper($request->description),
+            'amount' => $request->amount,
+            'subcategory_override' => $subcategoryOverride,
+        ]);
+
+        $this->ledger->syncOpeningBalancesForwardFrom($dailyCash);
 
         return back()->with('success', 'Entry updated. Later days in this period were synced to the new balances.');
     }
@@ -479,7 +578,7 @@ class DailyCashController extends Controller
         abort_if($entry->daily_cash_day_id !== $dailyCash->id, 404);
         $entry->delete();
 
-        $this->syncOpeningBalancesForwardFrom($dailyCash);
+        $this->ledger->syncOpeningBalancesForwardFrom($dailyCash);
 
         return back()->with('success', 'Entry deleted. Later days in this period were synced to the new balances.');
     }
@@ -494,6 +593,14 @@ class DailyCashController extends Controller
             'reference' => 'nullable|string|max:100',
             'notes' => 'nullable|string|max:500',
         ]);
+
+        $dailyCash->load('entries');
+        $available = round((float) $dailyCash->opening_balance + $dailyCash->net(), 2);
+        if ((float) $request->amount > $available + 0.005) {
+            return back()->withErrors([
+                'amount' => 'Maximum deposit today is '.number_format($available, 2).' (total available cash on hand).',
+            ]);
+        }
 
         DB::transaction(function () use ($request, $dailyCash) {
             // Resolve account name for the SAVINGS entry description
@@ -527,6 +634,7 @@ class DailyCashController extends Controller
             $max = $dailyCash->entries()->max('sort_order') ?? 0;
             $dailyCash->entries()->create([
                 'type' => 'SAVINGS',
+                'category' => 'cash_bank_investment',
                 'description' => strtoupper('DEPOSIT — '.$accountName),
                 'amount' => $request->amount,
                 'sort_order' => $max + 1,
@@ -534,7 +642,7 @@ class DailyCashController extends Controller
         });
 
         $dailyCash->refresh();
-        $this->syncOpeningBalancesForwardFrom($dailyCash);
+        $this->ledger->syncOpeningBalancesForwardFrom($dailyCash);
 
         return back()->with('success', 'Deposit recorded. Later days in this period were synced to the new balances.');
     }

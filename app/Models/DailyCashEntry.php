@@ -7,28 +7,28 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class DailyCashEntry extends Model
 {
-    protected $fillable = ['daily_cash_day_id', 'type', 'description', 'amount', 'sort_order'];
+    protected $fillable = ['daily_cash_day_id', 'type', 'category', 'subcategory_override', 'description', 'amount', 'sort_order'];
 
     protected $casts = ['amount' => 'decimal:2'];
 
     public static array $types = [
-        'CAPITAL'       => 'Capital',
-        'INCOME'        => 'Income',
-        'EXPENSES'      => 'Expenses',
-        'PURCHASES'     => 'Purchases',
+        'CAPITAL' => 'Capital',
+        'INCOME' => 'Income',
+        'EXPENSES' => 'Expenses',
+        'PURCHASES' => 'Purchases',
         'DISCRETIONARY' => 'Discretionary',
-        'SAVINGS'       => 'Savings',
-        'OTHER'         => 'Other',
+        'SAVINGS' => 'Savings',
+        'OTHER' => 'Other',
     ];
 
     public static array $typeColors = [
-        'CAPITAL'       => 'primary',
-        'INCOME'        => 'success',
-        'EXPENSES'      => 'danger',
-        'PURCHASES'     => 'warning',
+        'CAPITAL' => 'primary',
+        'INCOME' => 'success',
+        'EXPENSES' => 'danger',
+        'PURCHASES' => 'warning',
         'DISCRETIONARY' => 'secondary',
-        'SAVINGS'       => 'info',
-        'OTHER'         => 'dark',
+        'SAVINGS' => 'info',
+        'OTHER' => 'dark',
     ];
 
     public function day(): BelongsTo

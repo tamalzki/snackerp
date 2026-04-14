@@ -264,9 +264,65 @@
         border-color: #f5c842;
         box-shadow: 0 2px 8px rgba(0,0,0,0.25);
     }
+
+    /* Workbook-style bottom tabs (daily cashflow) — matches spreadsheet tab strip */
+    body.cashflow-bottom-tabs-active .main-content {
+        padding-bottom: 3.75rem;
+    }
+    .cashflow-bottom-tabs {
+        position: fixed;
+        bottom: 0;
+        left: 240px;
+        right: 0;
+        z-index: 200;
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 3px;
+        padding: 6px 10px 10px;
+        background: #d9d9d9;
+        box-shadow: 0 -3px 12px rgba(0,0,0,0.12);
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        align-items: flex-end;
+    }
+    .cashflow-bottom-tabs .cashflow-tab {
+        flex: 0 0 auto;
+        padding: 0.45rem 0.75rem;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-decoration: none;
+        color: #1e293b;
+        border-radius: 6px 6px 0 0;
+        border: 1px solid rgba(0,0,0,0.12);
+        border-bottom: none;
+        white-space: nowrap;
+        line-height: 1.2;
+        opacity: 0.92;
+        transition: opacity 0.15s, transform 0.15s;
+    }
+    .cashflow-bottom-tabs .cashflow-tab:hover {
+        opacity: 1;
+        color: #0f172a;
+    }
+    .cashflow-bottom-tabs .cashflow-tab.active {
+        opacity: 1;
+        font-weight: 700;
+        box-shadow: 0 -2px 0 rgba(0,0,0,0.15) inset;
+        transform: translateY(-1px);
+        outline: 2px solid rgba(15, 23, 42, 0.35);
+        outline-offset: -1px;
+    }
+    .cashflow-tab--guide { background: #fde047; }
+    .cashflow-tab--daily { background: #f9a8d4; color: #4a044e !important; }
+    .cashflow-tab--monthly { background: #93c5fd; }
+    .cashflow-tab--annual { background: #86efac; }
+    .cashflow-tab--income { background: #d8b4fe; }
+    .cashflow-tab--expenses { background: #60a5fa; color: #0f172a !important; }
+    .cashflow-tab--discretionary { background: #bef264; }
+    .cashflow-tab--savings { background: #c4b5fd; }
     </style>
 </head>
-<body>
+<body class="@if(request()->routeIs('daily-cash.*')) cashflow-bottom-tabs-active @endif">
 
 {{-- SIDEBAR --}}
 <nav class="sidebar">
@@ -420,6 +476,10 @@
 
     @yield('content')
 </div>
+
+@if(request()->routeIs('daily-cash.*'))
+    @include('daily-cash._bottom-tabs')
+@endif
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

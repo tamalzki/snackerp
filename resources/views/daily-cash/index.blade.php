@@ -3,6 +3,22 @@
 
 @section('content')
 
+@if(session('success'))
+<div class="alert alert-success alert-dismissible fade show py-2 small" role="alert">
+    {{ session('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+@endif
+@if(session('warning'))
+<div class="alert alert-warning alert-dismissible fade show py-2 small" role="alert">
+    {{ session('warning') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+@endif
+@if($errors->has('subcategory'))
+<div class="alert alert-danger py-2 small" role="alert">{{ $errors->first('subcategory') }}</div>
+@endif
+
 {{-- Top bar --}}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <a href="{{ route('daily-cash.today') }}" class="btn btn-primary btn-sm">
@@ -34,6 +50,14 @@
         </a>
     </li>
 </ul>
+
+<div class="d-flex flex-wrap gap-1 mb-3 small">
+    <span class="text-muted align-self-center me-1">Statements:</span>
+    <a href="{{ route('daily-cash.statements.income', ['year' => $filterYear ?? now()->year]) }}" class="btn btn-sm btn-outline-primary">Income</a>
+    <a href="{{ route('daily-cash.statements.expenses', ['year' => $filterYear ?? now()->year]) }}" class="btn btn-sm btn-outline-primary">Expenses</a>
+    <a href="{{ route('daily-cash.statements.discretionary', ['year' => $filterYear ?? now()->year]) }}" class="btn btn-sm btn-outline-success">Discretionary</a>
+    <a href="{{ route('daily-cash.statements.savings', ['year' => $filterYear ?? now()->year]) }}" class="btn btn-sm btn-outline-secondary">Savings</a>
+</div>
 
 {{-- ===== DAILY LOG ===== --}}
 @if($tab === 'daily')
@@ -118,13 +142,9 @@
     @endforeach
 </div>
 
-<div class="card">
-    <div class="card-header d-flex align-items-center gap-2">
-        <i class="bi bi-calendar-month text-success"></i>
-        Monthly Summary — {{ $filterYear }}
-    </div>
+<div class="card border-0 shadow-sm overflow-hidden">
     <div class="card-body p-0">
-        @include('daily-cash._summary-table', ['rows' => $monthly, 'emptyMsg' => 'No data for '.$filterYear.'.'])
+        @include('daily-cash._monthly-matrix', ['matrix' => $monthlyMatrix])
     </div>
 </div>
 @endif
@@ -164,4 +184,80 @@
         </form>
     </div>
 </div>
+
+{{-- Recategorize subcategory (monthly / annual line groups) --}}
+<div class="modal fade" id="subcategoryOverrideModal" tabindex="-1" aria-labelledby="subcategoryOverrideModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" action="{{ route('daily-cash.subcategory-override') }}">
+            @csrf
+            <div class="modal-content">
+                <div class="modal-header py-2">
+                    <h6 class="modal-title" id="subcategoryOverrideModalLabel">Recategorize line group</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body small">
+                    <p class="text-muted mb-2">This updates every ledger line in the selected <strong>year</strong> that matches the same type, description, and current subcategory bucket. Pick a <strong>subcategory</strong> from the list for this entry type, or <strong>Auto</strong> to infer from the description text.</p>
+                    <label class="form-label fw-semibold mb-1" for="subcat-select">Designated subcategory</label>
+                    <select name="subcategory_key" id="subcat-select" class="form-select form-select-sm"></select>
+                    <input type="hidden" name="year" id="subcat-year" value="">
+                    <input type="hidden" name="type" id="subcat-type" value="">
+                    <input type="hidden" name="description_norm" id="subcat-description-norm" value="">
+                    <input type="hidden" name="line_subcategory_key" id="subcat-line-key" value="">
+                    <input type="hidden" name="tab" id="subcat-tab" value="monthly">
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
 @endsection
+
+@push('scripts')
+<script>
+(function () {
+    const opts = @json($subcategoryOptionsByType ?? []);
+    const labelsByType = @json($subcategoryLabelsByType ?? []);
+    const modal = document.getElementById('subcategoryOverrideModal');
+    if (!modal) return;
+    modal.addEventListener('show.bs.modal', function (ev) {
+        const btn = ev.relatedTarget;
+        if (!btn || !btn.classList.contains('js-daily-cash-subcat-edit')) return;
+        const type = btn.getAttribute('data-type') || '';
+        document.getElementById('subcat-year').value = btn.getAttribute('data-year') || '';
+        document.getElementById('subcat-type').value = type;
+        document.getElementById('subcat-description-norm').value = btn.getAttribute('data-description-norm') || '';
+        document.getElementById('subcat-line-key').value = btn.getAttribute('data-line-subcategory-key') || '';
+        document.getElementById('subcat-tab').value = btn.getAttribute('data-tab') || 'monthly';
+        const sel = document.getElementById('subcat-select');
+        const list = opts[type] || [{ key: '', label: 'Auto — match description keywords' }];
+        sel.innerHTML = '';
+        list.forEach(function (o) {
+            const opt = document.createElement('option');
+            opt.value = o.key;
+            opt.textContent = o.label;
+            sel.appendChild(opt);
+        });
+        const cur = btn.getAttribute('data-line-subcategory-key') || '';
+        let matched = false;
+        for (let i = 0; i < sel.options.length; i++) {
+            if (sel.options[i].value === cur) {
+                sel.selectedIndex = i;
+                matched = true;
+                break;
+            }
+        }
+        if (!matched && cur !== '') {
+            const labels = labelsByType[type] || {};
+            const opt = document.createElement('option');
+            opt.value = cur;
+            opt.textContent = labels[cur] || cur;
+            sel.appendChild(opt);
+            sel.value = cur;
+        }
+    });
+})();
+</script>
+@endpush
