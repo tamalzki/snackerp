@@ -149,14 +149,11 @@
 </div>
 @endif
 
-{{-- ===== ANNUAL ===== --}}
+{{-- ===== ANNUAL (same table as Monthly; columns = calendar years) ===== --}}
 @if($tab === 'annual')
-<div class="card">
-    <div class="card-header d-flex align-items-center gap-2">
-        <i class="bi bi-bar-chart-line text-success"></i> Annual Summary
-    </div>
+<div class="card border-0 shadow-sm overflow-hidden">
     <div class="card-body p-0">
-        @include('daily-cash._summary-table', ['rows' => $annual, 'emptyMsg' => 'No annual data yet.'])
+        @include('daily-cash._monthly-matrix', ['matrix' => $annualMatrix])
     </div>
 </div>
 @endif

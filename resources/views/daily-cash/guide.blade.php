@@ -49,7 +49,7 @@
 
         <section class="mb-4">
             <h2 class="h6 fw-bold" style="color:#0d47a1;">Statements &amp; rollups</h2>
-            <p class="small text-muted mb-2"><strong>Income, Expenses, Discretionary, and Savings</strong> statements add lines to the <strong>same</strong> daily ledger for the date you pick. Use <strong>Monthly</strong> for a year grid by description, and <strong>Annual</strong> for year totals with expandable detail.</p>
+            <p class="small text-muted mb-2"><strong>Income, Expenses, Discretionary, and Savings</strong> statements add lines to the <strong>same</strong> daily ledger for the date you pick. <strong>Monthly</strong> and <strong>Annual</strong> use the <strong>same</strong> table (type, subcategory, description, totals): Monthly columns are <strong>Jan–Dec</strong> for one year; Annual columns are <strong>calendar years</strong> (oldest to newest) with the same row logic across years.</p>
             <p class="small text-muted mb-0">On Monthly/Annual you can <strong>recategorize</strong> a line group (pencil icon): that stores a subcategory override on every matching entry for that calendar year. Choose <strong>Auto</strong> to go back to keyword-based labels from the description.</p>
         </section>
 
@@ -69,7 +69,7 @@
             <div class="col-md-4">
                 <div class="p-3 rounded-3 h-100" style="background: #f0fdf4; border: 1px solid #86efac;">
                     <h3 class="h6 fw-bold" style="color: #15803d;">Annual</h3>
-                    <p class="small text-muted mb-0">Year rollups and per-year detail tables with the same subcategory tools.</p>
+                    <p class="small text-muted mb-0">Same matrix as Monthly; each column is a full calendar year instead of a month.</p>
                 </div>
             </div>
         </div>

@@ -1,6 +1,18 @@
 @php
-    $monthLabels = [1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr', 5 => 'May', 6 => 'Jun', 7 => 'Jul', 8 => 'Aug', 9 => 'Sep', 10 => 'Oct', 11 => 'Nov', 12 => 'Dec'];
     $typeColors = \App\Models\DailyCashEntry::$typeColors;
+    $columns = $matrix['columns'] ?? [];
+    $netFooter = $matrix['net_footer'] ?? [];
+    $cornerNet = $matrix['corner_net'] ?? ($matrix['year_total_net'] ?? 0);
+    $pencilYear = $matrix['pencil_year'] ?? ($matrix['year'] ?? now()->year);
+    $dataTab = $matrix['data_tab'] ?? 'monthly';
+    $headerTitle = $matrix['header_title'] ?? 'Monthly cash flow';
+    $headerMetricLabel = $matrix['header_metric_label'] ?? 'Year net:';
+    $infoText = $matrix['info_text'] ?? '';
+    $footerRowLabel = $matrix['footer_row_label'] ?? 'Net (month)';
+    $scrollHint = $matrix['scroll_hint'] ?? '';
+    $emptyContext = $matrix['empty_context'] ?? '';
+    $colCount = count($columns);
+    $tableColspan = 4 + $colCount + 1;
 @endphp
 
 <style>
@@ -103,16 +115,20 @@
 </style>
 
 <div class="monthly-matrix-header-bar d-flex flex-wrap align-items-center justify-content-between gap-2">
-    <h2 class="text-uppercase">Monthly cash flow</h2>
+    <h2 class="text-uppercase mb-0">{{ $headerTitle }}</h2>
     <div class="d-flex flex-wrap align-items-center gap-3 small">
-        <span class="text-primary fw-semibold">Year net: <strong>₱{{ number_format($matrix['year_total_net'], 2) }}</strong></span>
-        <span class="text-muted d-none d-md-inline">Scroll sideways to see all months →</span>
+        <span class="text-primary fw-semibold">{{ $headerMetricLabel }} <strong>&#8369;{{ number_format($cornerNet, 2) }}</strong></span>
+        @if($scrollHint !== '')
+            <span class="text-muted d-none d-md-inline">{{ $scrollHint }}</span>
+        @endif
     </div>
 </div>
+@if($infoText !== '')
 <div class="px-3 py-2 border-bottom bg-white small text-muted">
     <i class="bi bi-info-circle"></i>
-    Rows group the same <strong>type</strong> and <strong>description</strong> (spacing and caps ignored). <strong>Subcategory</strong> uses a manual override when you set one (pencil); otherwise it follows description keywords. Columns are calendar months left to right.
+    {!! $infoText !!}
 </div>
+@endif
 
 <div class="monthly-matrix-wrap">
     <table class="table table-bordered table-sm monthly-matrix-table align-middle">
@@ -122,8 +138,8 @@
                 <th class="sticky-sub">Subcategory</th>
                 <th class="sticky-edit px-1 text-center" style="font-size:0.7rem;" title="Recategorize subcategory">Edit</th>
                 <th class="sticky-desc">Description</th>
-                @foreach($monthLabels as $num => $abbr)
-                    <th class="month-col text-end">{{ $abbr }}</th>
+                @foreach($columns as $col)
+                    <th class="month-col text-end">{{ $col['label'] }}</th>
                 @endforeach
                 <th class="month-col text-end" style="background:#0d4d3c;">Total</th>
             </tr>
@@ -142,47 +158,53 @@
                                 title="Recategorize"
                                 data-bs-toggle="modal"
                                 data-bs-target="#subcategoryOverrideModal"
-                                data-year="{{ $matrix['year'] }}"
+                                data-year="{{ $pencilYear }}"
                                 data-type="{{ $line['type'] }}"
                                 data-description-norm="{{ $line['description_norm'] }}"
                                 data-line-subcategory-key="{{ $line['subcategory_key'] }}"
-                                data-tab="monthly">
+                                data-tab="{{ $dataTab }}">
                             <i class="bi bi-pencil-square"></i>
                         </button>
                     </td>
                     <td class="sticky-desc small">{{ $line['description_display'] }}</td>
-                    @foreach($monthLabels as $num => $_)
-                        @php $amt = $line['amounts'][$num] ?? 0; @endphp
+                    @foreach($columns as $col)
+                        @php $ck = $col['key']; $amt = $line['amounts'][$ck] ?? 0; @endphp
                         <td class="month-col text-end @if($amt > 0) text-success @elseif($amt < 0) text-danger @endif">
                             @if(abs($amt) >= 0.005)
-                                ₱{{ number_format($amt, 2) }}
+                                &#8369;{{ number_format($amt, 2) }}
                             @endif
                         </td>
                     @endforeach
                     <td class="month-col text-end fw-semibold" style="background:#f0fdf4;">
                         @if(abs($line['row_total']) >= 0.005)
-                            ₱{{ number_format($line['row_total'], 2) }}
+                            &#8369;{{ number_format($line['row_total'], 2) }}
                         @endif
                     </td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="17" class="text-center text-muted py-5">No ledger entries for {{ $matrix['year'] }}.</td>
+                    <td colspan="{{ $tableColspan }}" class="text-center text-muted py-5">
+                        @if(($matrix['mode'] ?? '') === 'annual')
+                            No ledger entries yet.
+                        @else
+                            No ledger entries for {{ $emptyContext }}.
+                        @endif
+                    </td>
                 </tr>
             @endforelse
         </tbody>
-        @if(count($matrix['lines']) > 0)
+        @if(count($matrix['lines']) > 0 && $colCount > 0)
         <tfoot>
             <tr class="fw-bold" style="background:#f0f9f6;">
-                <th class="sticky-type ps-3 text-uppercase small" colspan="4">Net (month)</th>
-                @foreach($monthLabels as $num => $_)
-                    @php $nm = $matrix['net_by_month'][$num] ?? 0; @endphp
+                <th class="sticky-type ps-3 text-uppercase small" colspan="4">{{ $footerRowLabel }}</th>
+                @foreach($columns as $col)
+                    @php $ck = $col['key']; $nm = $netFooter[$ck] ?? 0; @endphp
                     <th class="month-col text-end {{ $nm >= 0 ? 'text-success' : 'text-danger' }}">
-                        ₱{{ number_format($nm, 2) }}
+                        &#8369;{{ number_format($nm, 2) }}
                     </th>
                 @endforeach
-                <th class="month-col text-end {{ $matrix['year_total_net'] >= 0 ? 'text-success' : 'text-danger' }}" style="background:#e8f5f1;">
-                    ₱{{ number_format($matrix['year_total_net'], 2) }}
+                <th class="month-col text-end {{ $cornerNet >= 0 ? 'text-success' : 'text-danger' }}" style="background:#e8f5f0;">
+                    &#8369;{{ number_format($cornerNet, 2) }}
                 </th>
             </tr>
         </tfoot>
