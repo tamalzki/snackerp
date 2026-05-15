@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Models\DailyCashDay;
+use App\Support\DailyCashMetroLedger;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class DailyCashLedgerService
 {
@@ -136,5 +138,37 @@ class DailyCashLedgerService
         }
 
         return $day;
+    }
+
+    /**
+     * Ensure fixed worksheet rows exist for this day (Metro layout). Idempotent.
+     */
+    public function ensureMetroSheetEntries(DailyCashDay $day): void
+    {
+        DB::transaction(function () use ($day) {
+            foreach (DailyCashMetroLedger::stubLines() as $stub) {
+                if ($stub['type'] === 'CAPITAL') {
+                    $exists = $day->entries()->where('type', 'CAPITAL')->exists();
+                } else {
+                    $exists = $day->entries()
+                        ->where('type', $stub['type'])
+                        ->where('category', $stub['category_key'])
+                        ->exists();
+                }
+
+                if ($exists) {
+                    continue;
+                }
+
+                $day->entries()->create([
+                    'type' => $stub['type'],
+                    'category' => $stub['category_key'],
+                    'subcategory_override' => null,
+                    'description' => strtoupper($stub['label']),
+                    'amount' => 0,
+                    'sort_order' => $stub['sort'],
+                ]);
+            }
+        });
     }
 }

@@ -27,11 +27,35 @@ return [
     */
     'category_presets' => [
         'INCOME' => [
-            'income_water' => 'Income — Water',
-            'income_farm' => 'Income — Farm',
+            'income_water' => 'Water',
+            'income_farm' => 'Farm',
             'cash_from_bank' => 'Cash from Bank — Withdrawals',
+            // Metro daily worksheet (Income under INCOME: ASSORTED)
+            'metro_income_suman' => 'Suman',
+            'metro_income_others' => 'Others',
         ],
         'EXPENSES' => [
+            // Metro daily worksheet — expense buckets / lines (labels align with worksheet Category column)
+            'metro_exp_assorted_ingredients' => 'Ingredients',
+            'metro_exp_assorted_cooking_fuel' => 'Cooking Fuel',
+            'metro_exp_assorted_transportation' => 'Transportation',
+            'metro_exp_assorted_electricity_water' => 'Electricity & Water',
+            'metro_exp_assorted_salaries_wages' => 'Salary & Wages',
+            'metro_exp_assorted_repair_maintenance' => 'Repair and Maintenance',
+            'metro_exp_assorted_label_packaging' => 'Label & Packaging',
+            'metro_exp_assorted_others' => 'Others',
+            'metro_exp_water_supplies' => 'Supplies',
+            'metro_exp_water_repairs_maintenance' => 'Repair & Maintenance',
+            'metro_exp_water_electricity_water' => 'Electricity & Water',
+            'metro_exp_water_salaries_wages' => 'Salary & Wages',
+            'metro_exp_water_others' => 'Others',
+            'metro_exp_farm_seedlings' => 'Seedlings',
+            'metro_exp_farm_fertilizers' => 'Fertilizers / Herbicide',
+            'metro_exp_farm_others' => 'Others',
+            'metro_exp_suman_suman' => 'Suman',
+            'metro_exp_suman_water' => 'Water',
+            'metro_exp_suman_farm' => 'Farm',
+            'metro_exp_suman_others' => 'Others',
             'utilities' => 'Utilities — electric, water, gas / LPG',
             'internet_phone' => 'Internet & phone — broadband, mobile plan',
             'transportation' => 'Transportation — fuel, commute, delivery, parking, tolls',
@@ -60,7 +84,7 @@ return [
             'savings_investment' => 'Savings / investment (reporting)',
         ],
         'CAPITAL' => [
-            'capital_contribution' => 'Capital contribution',
+            'capital_contribution' => 'Capital',
         ],
     ],
 
@@ -260,6 +284,54 @@ return [
         ],
 
         'OTHER' => [],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Metro daily worksheet (fixed rows on Daily Cash — match client outline)
+    |--------------------------------------------------------------------------
+    |
+    | Each line uses category_key on daily_cash_entries.category. Stubs are
+    | created per day (amount 0) so the grid is always full.
+    |
+    */
+    'metro_daily_sheet' => [
+        ['kind' => 'heading', 'title' => 'CAPITAL'],
+        ['kind' => 'line', 'type' => 'CAPITAL', 'category_key' => 'capital_contribution', 'category_display' => 'Capital'],
+
+        ['kind' => 'heading', 'title' => 'INCOME: ASSORTED'],
+        ['kind' => 'line', 'type' => 'INCOME', 'category_key' => 'metro_income_suman', 'category_display' => 'Suman'],
+        ['kind' => 'line', 'type' => 'INCOME', 'category_key' => 'income_water', 'category_display' => 'Water'],
+        ['kind' => 'line', 'type' => 'INCOME', 'category_key' => 'income_farm', 'category_display' => 'Farm'],
+        ['kind' => 'line', 'type' => 'INCOME', 'category_key' => 'metro_income_others', 'category_display' => 'Others'],
+
+        ['kind' => 'heading', 'title' => 'EXPENSE: ASSORTED'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_assorted_ingredients', 'category_display' => 'Ingredients'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_assorted_cooking_fuel', 'category_display' => 'Cooking Fuel'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_assorted_transportation', 'category_display' => 'Transportation'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_assorted_electricity_water', 'category_display' => 'Electricity & Water'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_assorted_salaries_wages', 'category_display' => 'Salary & Wages'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_assorted_repair_maintenance', 'category_display' => 'Repair and Maintenance'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_assorted_label_packaging', 'category_display' => 'Label & Packaging'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_assorted_others', 'category_display' => 'Others'],
+
+        ['kind' => 'heading', 'title' => 'EXPENSE: WATER'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_water_supplies', 'category_display' => 'Supplies'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_water_repairs_maintenance', 'category_display' => 'Repair & Maintenance'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_water_electricity_water', 'category_display' => 'Electricity & Water'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_water_salaries_wages', 'category_display' => 'Salary & Wages'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_water_others', 'category_display' => 'Others'],
+
+        ['kind' => 'heading', 'title' => 'EXPENSE: FARM'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_farm_seedlings', 'category_display' => 'Seedlings'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_farm_fertilizers', 'category_display' => 'Fertilizers / Herbicide'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_farm_others', 'category_display' => 'Others'],
+
+        ['kind' => 'heading', 'title' => 'EXPENSE: SUMAN'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_suman_suman', 'category_display' => 'Suman'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_suman_water', 'category_display' => 'Water'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_suman_farm', 'category_display' => 'Farm'],
+        ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_suman_others', 'category_display' => 'Others'],
     ],
 
 ];

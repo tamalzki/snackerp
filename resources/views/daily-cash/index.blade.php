@@ -39,13 +39,13 @@
     </li>
     <li class="nav-item">
         <a class="nav-link {{ $tab === 'monthly' ? 'active' : '' }}"
-           href="{{ route('daily-cash.index', ['tab' => 'monthly', 'year' => $filterYear]) }}">
+           href="{{ route('daily-cash.index', ['tab' => 'monthly', 'period' => $metroPeriodValue]) }}">
             <i class="bi bi-calendar-month"></i> Monthly
         </a>
     </li>
     <li class="nav-item">
         <a class="nav-link {{ $tab === 'annual' ? 'active' : '' }}"
-           href="{{ route('daily-cash.index', ['tab' => 'annual']) }}">
+           href="{{ route('daily-cash.index', ['tab' => 'annual', 'year' => $annualYear]) }}">
             <i class="bi bi-bar-chart-line"></i> Annual
         </a>
     </li>
@@ -53,10 +53,10 @@
 
 <div class="d-flex flex-wrap gap-1 mb-3 small">
     <span class="text-muted align-self-center me-1">Statements:</span>
-    <a href="{{ route('daily-cash.statements.income', ['year' => $filterYear ?? now()->year]) }}" class="btn btn-sm btn-outline-primary">Income</a>
-    <a href="{{ route('daily-cash.statements.expenses', ['year' => $filterYear ?? now()->year]) }}" class="btn btn-sm btn-outline-primary">Expenses</a>
-    <a href="{{ route('daily-cash.statements.discretionary', ['year' => $filterYear ?? now()->year]) }}" class="btn btn-sm btn-outline-success">Discretionary</a>
-    <a href="{{ route('daily-cash.statements.savings', ['year' => $filterYear ?? now()->year]) }}" class="btn btn-sm btn-outline-secondary">Savings</a>
+    <a href="{{ route('daily-cash.statements.income', ['year' => $statementYear ?? now()->year]) }}" class="btn btn-sm btn-outline-primary">Income</a>
+    <a href="{{ route('daily-cash.statements.expenses', ['year' => $statementYear ?? now()->year]) }}" class="btn btn-sm btn-outline-primary">Expenses</a>
+    <a href="{{ route('daily-cash.statements.discretionary', ['year' => $statementYear ?? now()->year]) }}" class="btn btn-sm btn-outline-success">Discretionary</a>
+    <a href="{{ route('daily-cash.statements.savings', ['year' => $statementYear ?? now()->year]) }}" class="btn btn-sm btn-outline-secondary">Savings</a>
 </div>
 
 {{-- ===== DAILY LOG ===== --}}
@@ -132,28 +132,36 @@
 
 {{-- ===== MONTHLY ===== --}}
 @if($tab === 'monthly')
-<div class="d-flex align-items-center gap-2 mb-3">
+<form method="get" action="{{ route('daily-cash.index') }}" class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <input type="hidden" name="tab" value="monthly">
+    <label for="metro-period-input" class="fw-semibold small mb-0">Month</label>
+    <input id="metro-period-input" type="month" name="period" value="{{ $metroPeriodValue }}"
+           class="form-control form-control-sm" style="width:auto;max-width:12rem;"
+           onchange="this.form.submit()">
+</form>
+
+<div class="card border-0 shadow-sm overflow-hidden">
+    <div class="card-body p-0">
+        @include('daily-cash._monthly-metro-worksheet', ['matrix' => $monthlyMetroMatrix])
+    </div>
+</div>
+@endif
+
+{{-- ===== ANNUAL: January–December × Income / Expense / Disc. / Savings by Metro bucket ===== --}}
+@if($tab === 'annual')
+<div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
     <span class="fw-bold small">Year:</span>
-    @foreach($years as $y)
-    <a href="{{ route('daily-cash.index', ['tab' => 'monthly', 'year' => $y]) }}"
-       class="btn btn-sm {{ $filterYear == $y ? 'btn-primary' : 'btn-outline-secondary' }}">
-        {{ $y }}
-    </a>
+    @foreach($annualYears as $y)
+        <a href="{{ route('daily-cash.index', ['tab' => 'annual', 'year' => $y]) }}"
+           class="btn btn-sm {{ $annualYear == $y ? 'btn-primary' : 'btn-outline-secondary' }}">
+            {{ $y }}
+        </a>
     @endforeach
 </div>
 
 <div class="card border-0 shadow-sm overflow-hidden">
     <div class="card-body p-0">
-        @include('daily-cash._monthly-matrix', ['matrix' => $monthlyMatrix])
-    </div>
-</div>
-@endif
-
-{{-- ===== ANNUAL (same table as Monthly; columns = calendar years) ===== --}}
-@if($tab === 'annual')
-<div class="card border-0 shadow-sm overflow-hidden">
-    <div class="card-body p-0">
-        @include('daily-cash._monthly-matrix', ['matrix' => $annualMatrix])
+        @include('daily-cash._annual-cashflow-grid')
     </div>
 </div>
 @endif

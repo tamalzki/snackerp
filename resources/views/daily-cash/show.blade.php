@@ -253,12 +253,37 @@
             </div>
 
             <div class="card-body p-0">
+                <style>
+                    /* Collapsed borders so every cell shares continuous grid lines */
+                    .daily-cash-worksheet {
+                        border-collapse: collapse;
+                        border-spacing: 0;
+                    }
+                    .daily-cash-worksheet thead th {
+                        border: 1px solid #212529 !important;
+                        font-weight: 600;
+                    }
+                    .daily-cash-worksheet tbody.daily-cash-sheet-group td {
+                        border: 1px solid #212529 !important;
+                        vertical-align: top;
+                    }
+                    .daily-cash-worksheet tbody.daily-cash-sheet-spacer td {
+                        border: none !important;
+                        height: 0.45rem;
+                        padding: 0 !important;
+                        background: transparent !important;
+                    }
+                    .daily-cash-worksheet tfoot td {
+                        border: 1px solid #212529 !important;
+                        vertical-align: middle;
+                    }
+                </style>
                 <div class="table-responsive">
-                    <table class="table table-sm mb-0 align-middle" style="font-size:0.82rem;">
+                    <table class="table table-sm mb-0 align-middle daily-cash-worksheet" style="font-size:0.82rem;">
                         <thead>
                             <tr>
-                                <th class="ps-3" style="width:120px;">Type</th>
-                                <th>Description</th>
+                                <th class="ps-2" style="width:9rem;">Group</th>
+                                <th>Category</th>
                                 <th class="text-end" style="width:100px;">Capital</th>
                                 <th class="text-end" style="width:100px;">Income</th>
                                 <th class="text-end" style="width:100px;">Expenses</th>
@@ -268,61 +293,120 @@
                                 <th style="width:140px;"></th>
                             </tr>
                         </thead>
-                        <tbody>
-                            @forelse($dailyCash->entries as $entry)
                             @php
-                                $color = \App\Models\DailyCashEntry::$typeColors[$entry->type] ?? 'secondary';
+                                $metroSections = [];
+                                $currentSection = null;
+                                foreach ($metroSheetRows as $_sheetRow) {
+                                    $_k = $_sheetRow['kind'] ?? '';
+                                    if ($_k === 'heading') {
+                                        if ($currentSection !== null) {
+                                            $metroSections[] = $currentSection;
+                                        }
+                                        $currentSection = ['heading' => $_sheetRow['title'] ?? '', 'lines' => []];
+                                    } elseif ($_k === 'line' && $currentSection !== null) {
+                                        $currentSection['lines'][] = $_sheetRow;
+                                    }
+                                }
+                                if ($currentSection !== null) {
+                                    $metroSections[] = $currentSection;
+                                }
                             @endphp
-                            <tr>
-                                <td class="ps-3">
-                                    <span class="badge bg-{{ $color }}" style="font-size:0.65rem;">{{ $entry->type }}</span>
-                                    @if($entry->type === 'INCOME' && $entry->category === \App\Support\DailyCashflowCategories::CASH_FROM_BANK)
-                                        <span class="d-block text-muted mt-1" style="font-size:0.62rem;">Bank withdrawal</span>
-                                    @endif
-                                </td>
-                                <td>{{ $entry->description }}</td>
-                                <td class="text-end">{{ $entry->type === 'CAPITAL' ? '₱'.number_format($entry->amount,2) : '' }}</td>
-                                <td class="text-end text-success">{{ $entry->type === 'INCOME' ? '₱'.number_format($entry->amount,2) : '' }}</td>
-                                <td class="text-end text-danger">{{ in_array($entry->type, ['EXPENSES','PURCHASES']) ? '₱'.number_format($entry->amount,2) : '' }}</td>
-                                <td class="text-end">{{ $entry->type === 'DISCRETIONARY' ? '₱'.number_format($entry->amount,2) : '' }}</td>
-                                <td class="text-end text-info">{{ $entry->type === 'SAVINGS' ? '₱'.number_format($entry->amount,2) : '' }}</td>
-                                <td class="text-end text-secondary">{{ $entry->type === 'OTHER' ? '₱'.number_format($entry->amount,2) : '' }}</td>
-                                <td class="text-end pe-2" style="white-space:nowrap;">
-                                    <button class="btn btn-outline-secondary py-0 px-2"
-                                            style="font-size:0.75rem;"
-                                            onclick="editEntry({{ $entry->id }}, {{ json_encode($entry->type) }}, {{ json_encode($entry->description) }}, {{ json_encode((float) $entry->amount) }}, {{ json_encode($entry->category) }}, {{ json_encode($entry->subcategory_override ?? '') }})">
-                                        <i class="bi bi-pencil"></i> Edit
-                                    </button>
-                                    <form method="POST"
-                                          action="{{ route('daily-cash.entries.destroy', [$dailyCash, $entry]) }}"
-                                          class="d-inline"
-                                          onsubmit="return dailyCashConfirmDeleteEntry()">
-                                        @csrf @method('DELETE')
-                                        <button class="btn btn-outline-danger py-0 px-2"
-                                                style="font-size:0.75rem;">
-                                            <i class="bi bi-trash"></i> Delete
-                                        </button>
-                                    </form>
-                                </td>
-                            </tr>
-                            @empty
-                            <tr>
-                                <td colspan="9" class="text-center text-muted py-4">
-                                    No entries yet — click <strong>Add Entry</strong> to start logging.
-                                </td>
-                            </tr>
-                            @endforelse
-                        </tbody>
+                            @foreach($metroSections as $section)
+                                @php
+                                    $lines = $section['lines'] ?? [];
+                                    $typeRowspan = count($lines);
+                                    $parentLabel = \App\Support\DailyCashMetroLedger::parentColumnLabelFromSectionHeading($section['heading'] ?? '');
+                                @endphp
+                                @if($typeRowspan > 0)
+                                <tbody class="daily-cash-sheet-group">
+                                @foreach($lines as $lineIdx => $sheetRow)
+                                    @php
+                                        $lineType = $sheetRow['type'];
+                                        $lineAmt = (float) ($sheetRow['amount'] ?? 0);
+                                        $hasAmt = abs($lineAmt) > 0.005;
+                                        $pc = \App\Support\DailyCashMetroLedger::primaryAmountColumn($lineType);
+                                        $rep = $sheetRow['representative_entry'] ?? null;
+                                        $categoryDisplay = $sheetRow['category_display'] ?? '';
+                                    @endphp
+                                    <tr>
+                                        @if($lineIdx === 0)
+                                            <td rowspan="{{ $typeRowspan }}" class="ps-3 py-2 align-top text-body" style="width:9rem;max-width:11rem;">
+                                                {{ $parentLabel }}
+                                            </td>
+                                        @endif
+                                        <td class="align-top py-2 text-body">
+                                            {{ $categoryDisplay }}
+                                            @if($lineType === 'INCOME' && ($sheetRow['category_key'] ?? '') === 'cash_from_bank')
+                                                <span class="d-block text-muted mt-1" style="font-size:0.62rem;">Withdrawal</span>
+                                            @endif
+                                        </td>
+                                        <td class="text-end align-top py-2">
+                                            @if($pc === 'capital' && $hasAmt)
+                                                <span>₱{{ number_format($lineAmt, 2) }}</span>
+                                            @endif
+                                        </td>
+                                        <td class="text-end align-top py-2">
+                                            @if($pc === 'income' && $hasAmt)
+                                                ₱{{ number_format($lineAmt, 2) }}
+                                            @endif
+                                        </td>
+                                        <td class="text-end align-top py-2">
+                                            @if($pc === 'expenses' && $hasAmt)
+                                                ₱{{ number_format($lineAmt, 2) }}
+                                            @endif
+                                        </td>
+                                        <td class="text-end align-top py-2">
+                                            @if($pc === 'discretionary' && $hasAmt)
+                                                <span>₱{{ number_format($lineAmt, 2) }}</span>
+                                            @endif
+                                        </td>
+                                        <td class="text-end align-top py-2">
+                                            @if($pc === 'savings' && $hasAmt)
+                                                ₱{{ number_format($lineAmt, 2) }}
+                                            @endif
+                                        </td>
+                                        <td class="text-end align-top py-2">
+                                            @if($pc === 'other' && $hasAmt)
+                                                ₱{{ number_format($lineAmt, 2) }}
+                                            @endif
+                                        </td>
+                                        <td class="text-end pe-2 align-top py-2" style="white-space:nowrap;">
+                                            @if($rep)
+                                                <button class="btn btn-outline-secondary py-0 px-2"
+                                                        style="font-size:0.75rem;"
+                                                        onclick="editEntry({{ $rep->id }}, {{ json_encode($rep->type) }}, {{ json_encode($rep->description) }}, {{ json_encode((float) $rep->amount) }}, {{ json_encode($rep->category) }}, {{ json_encode($rep->subcategory_override ?? '') }})">
+                                                    <i class="bi bi-pencil"></i> Edit
+                                                </button>
+                                                <form method="POST"
+                                                      action="{{ route('daily-cash.entries.destroy', [$dailyCash, $rep]) }}"
+                                                      class="d-inline"
+                                                      onsubmit="return dailyCashConfirmDeleteEntry()">
+                                                    @csrf @method('DELETE')
+                                                    <button class="btn btn-outline-danger py-0 px-2"
+                                                            style="font-size:0.75rem;">
+                                                        <i class="bi bi-trash"></i> Delete
+                                                    </button>
+                                                </form>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                                </tbody>
+                                @if(!$loop->last)
+                                <tbody class="daily-cash-sheet-spacer"><tr><td colspan="9"></td></tr></tbody>
+                                @endif
+                                @endif
+                            @endforeach
                         @if($dailyCash->entries->count() > 0)
-                        <tfoot style="background:#f0f9f6;border-top:2px solid #007A5E;">
-                            <tr class="fw-bold">
-                                <td colspan="2" class="ps-3 text-uppercase small">Totals</td>
+                        <tfoot class="table-light">
+                            <tr class="fw-semibold">
+                                <td colspan="2" class="ps-3 small text-body-secondary">Totals</td>
                                 <td class="text-end">₱{{ number_format($dailyCash->capital(), 2) }}</td>
-                                <td class="text-end text-success">₱{{ number_format($dailyCash->income(), 2) }}</td>
-                                <td class="text-end text-danger">₱{{ number_format($dailyCash->expenses(), 2) }}</td>
+                                <td class="text-end">₱{{ number_format($dailyCash->income(), 2) }}</td>
+                                <td class="text-end">₱{{ number_format($dailyCash->expenses(), 2) }}</td>
                                 <td class="text-end">₱{{ number_format($dailyCash->discretionary(), 2) }}</td>
-                                <td class="text-end text-info">₱{{ number_format($dailyCash->savings(), 2) }}</td>
-                                <td class="text-end text-secondary">₱{{ number_format($dailyCash->totalByType('OTHER'), 2) }}</td>
+                                <td class="text-end">₱{{ number_format($dailyCash->savings(), 2) }}</td>
+                                <td class="text-end">₱{{ number_format($dailyCash->totalByType('OTHER'), 2) }}</td>
                                 <td></td>
                             </tr>
                         </tfoot>
@@ -335,12 +419,15 @@
 
 </div>
 
-{{-- Add Entry Modal --}}
+{{-- Add Entry Modal (worksheet drill-down + cash from bank) --}}
 <div class="modal fade" id="addEntryModal" tabindex="-1">
     <div class="modal-dialog">
         <form method="POST" action="{{ route('daily-cash.entries.store', $dailyCash) }}"
-              onsubmit="return dailyCashConfirmCarryImpact()">
+              id="addEntryForm"
+              onsubmit="return dailyCashAddEntrySubmit();">
             @csrf
+            <input type="hidden" name="type" id="addEntryResolvedType" value="">
+            <input type="hidden" name="worksheet_category_key" id="addEntryWorksheetCategoryKey" value="">
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title"><i class="bi bi-plus-circle text-success"></i> Add Entry</h6>
@@ -349,64 +436,39 @@
                 <div class="modal-body">
                     <div class="row g-2">
                         <div class="col-12">
-                            <label class="form-label small fw-bold">Type</label>
-                            <select name="type" id="addEntryType" class="form-select form-select-sm" required>
-                                @foreach(\App\Models\DailyCashEntry::$types as $val => $label)
-                                <option value="{{ $val }}">{{ $label }}</option>
-                                @if($val === 'INCOME')
-                                <option value="CASH_FROM_BANK">Cash from Bank — Withdrawals (adds to cash on hand)</option>
-                                @endif
-                                @endforeach
+                            <label class="form-label small fw-bold">Entry group</label>
+                            <select id="addEntryGroup" class="form-select form-select-sm" required>
+                                <option value="" selected disabled>— Choose —</option>
+                                <option value="CASH_FROM_BANK">Cash from Bank — Withdrawals</option>
+                                <option value="CAPITAL">Capital</option>
+                                <option value="INCOME">Income</option>
+                                <option value="EXPENSES">Expenses</option>
                             </select>
-                            <div class="form-text">Use <strong>Cash from Bank — Withdrawals</strong> for ATM or counter withdrawals that increase cash on hand. Use <strong>Deposit to Bank</strong> (below the summary) when cash leaves the till for the bank.</div>
+                            <div class="form-text small">Matches the daily worksheet. Use <strong>Deposit to Bank</strong> (below the summary) when cash leaves the till for the bank.</div>
                         </div>
-                        <div class="col-12 js-add-entry-classify">
-                            <label class="form-label small fw-bold">Subcategory <span class="text-muted fw-normal">(optional)</span></label>
-                            <select name="subcategory_key" id="addEntrySubcategory" class="form-select form-select-sm"></select>
-                            <div class="form-text">Leave the default to skip this step — the line can show as <strong>Uncategorized</strong> or match <strong>keywords</strong> in the description. You can always set or change the bucket later with the <strong>pencil</strong> on Monthly / Annual.</div>
+                        <div class="col-12 d-none" id="addEntryExpenseBucketWrap">
+                            <label class="form-label small fw-bold">Expense section</label>
+                            <select id="addExpenseBucket" class="form-select form-select-sm"></select>
                         </div>
-                        <div class="col-12 js-add-entry-classify">
-                            <label class="form-label small fw-bold">Optional ledger tag</label>
-                            <select name="category_preset" id="addEntryCategoryPreset" class="form-select form-select-sm">
-                                <option value="none">— None —</option>
-                                @foreach(\App\Support\DailyCashflowCategories::presetsForType('INCOME') as $val => $label)
-                                    @if($val !== 'cash_from_bank')
-                                    <option value="{{ $val }}" data-preset-type="INCOME">{{ $label }}</option>
-                                    @endif
-                                @endforeach
-                                @foreach(\App\Support\DailyCashflowCategories::presetsForType('EXPENSES') as $val => $label)
-                                    <option value="{{ $val }}" data-preset-type="EXPENSES" class="d-none">{{ $label }}</option>
-                                @endforeach
-                                @foreach(\App\Support\DailyCashflowCategories::presetsForType('PURCHASES') as $val => $label)
-                                    <option value="{{ $val }}" data-preset-type="PURCHASES" class="d-none">{{ $label }}</option>
-                                @endforeach
-                                @foreach(\App\Support\DailyCashflowCategories::presetsForType('DISCRETIONARY') as $val => $label)
-                                    <option value="{{ $val }}" data-preset-type="DISCRETIONARY" class="d-none">{{ $label }}</option>
-                                @endforeach
-                                @foreach(\App\Support\DailyCashflowCategories::presetsForType('SAVINGS') as $val => $label)
-                                    <option value="{{ $val }}" data-preset-type="SAVINGS" class="d-none">{{ $label }}</option>
-                                @endforeach
-                                @foreach(\App\Support\DailyCashflowCategories::presetsForType('CAPITAL') as $val => $label)
-                                    <option value="{{ $val }}" data-preset-type="CAPITAL" class="d-none">{{ $label }}</option>
-                                @endforeach
-                                <option value="income_plus" data-preset-type="INCOME" class="d-none">Income + custom…</option>
-                                <option value="discretionary_plus" data-preset-type="DISCRETIONARY" class="d-none">Discretionary + custom…</option>
-                                <option value="savings_plus" data-preset-type="SAVINGS" class="d-none">Savings + custom…</option>
-                            </select>
+                        <div class="col-12 d-none" id="addEntryLineWrap">
+                            <label class="form-label small fw-bold" id="addEntryLineLabel">Category line</label>
+                            <select id="addEntryLineSelect" class="form-select form-select-sm"></select>
                         </div>
-                        <div class="col-12 d-none" id="addEntryCustomCategoryWrap">
-                            <label class="form-label small fw-bold">Custom category name</label>
-                            <input type="text" name="category_custom_piece" id="addEntryCategoryCustom" class="form-control form-control-sm" placeholder="e.g. SIDE BUSINESS">
+                        <div class="col-12 d-none" id="addEntryOtherWrap">
+                            <label class="form-label small fw-bold">Specify “Other” <span class="text-danger">*</span></label>
+                            <input type="text" name="other_specify" id="addEntryOtherSpecify" class="form-control form-control-sm"
+                                   maxlength="255">
+                            <div class="form-text small">Shows on the worksheet as <strong>Other - …</strong> with this text.</div>
                         </div>
-                        <div class="col-12">
-                            <label class="form-label small fw-bold">Description</label>
-                            <input type="text" name="description" class="form-control form-control-sm"
-                                   placeholder="e.g. BDO ATM, COUNTER WITHDRAWAL…" required>
+                        <div class="col-12 d-none" id="addEntryDescWrap">
+                            <label class="form-label small fw-bold">Description <span id="addEntryDescRequiredStar" class="text-danger d-none">*</span></label>
+                            <input type="text" name="description" id="addEntryDescription" class="form-control form-control-sm"
+                                   maxlength="255">
                         </div>
                         <div class="col-12">
                             <label class="form-label small fw-bold">Amount (₱)</label>
                             <input type="number" name="amount" step="0.01" min="0.01"
-                                   class="form-control form-control-sm" placeholder="0.00" required>
+                                   class="form-control form-control-sm" required>
                         </div>
                     </div>
                 </div>
@@ -436,7 +498,6 @@
                     <input type="number" name="total_cash" step="0.01" min="0"
                            value="{{ old('total_cash', (float) $totalAvailableCash) }}"
                            class="form-control @error('total_cash') is-invalid @enderror"
-                           placeholder="Enter actual cash on hand"
                            required>
                     @error('total_cash')
                         <div class="invalid-feedback d-block">{{ $message }}</div>
@@ -488,7 +549,7 @@
                             <label class="form-label small fw-bold">Amount (₱)</label>
                             <input type="number" name="amount" step="0.01" min="0.01"
                                    class="form-control form-control-sm @error('amount') is-invalid @enderror"
-                                   placeholder="0.00" value="{{ old('amount') }}" required>
+                                   value="{{ old('amount') }}" required>
                             @error('amount')
                                 <div class="invalid-feedback d-block">{{ $message }}</div>
                             @enderror
@@ -497,14 +558,12 @@
 
                         <div class="col-12">
                             <label class="form-label small fw-bold">Reference <span class="text-muted fw-normal">(optional)</span></label>
-                            <input type="text" name="reference" class="form-control form-control-sm"
-                                   placeholder="e.g. BDO slip #001">
+                            <input type="text" name="reference" class="form-control form-control-sm">
                         </div>
 
                         <div class="col-12">
                             <label class="form-label small fw-bold">Notes <span class="text-muted fw-normal">(optional)</span></label>
-                            <textarea name="notes" class="form-control form-control-sm" rows="2"
-                                      placeholder="Additional details…"></textarea>
+                            <textarea name="notes" class="form-control form-control-sm" rows="2"></textarea>
                         </div>
 
                     </div>
@@ -523,7 +582,7 @@
 {{-- Edit Entry Modal --}}
 <div class="modal fade" id="editEntryModal" tabindex="-1">
     <div class="modal-dialog">
-        <form method="POST" id="editEntryForm" onsubmit="return dailyCashConfirmCarryImpact()">
+        <form method="POST" id="editEntryForm" onsubmit="return dailyCashEditEntrySubmit();">
             @csrf @method('PUT')
             <div class="modal-content">
                 <div class="modal-header">
@@ -532,9 +591,31 @@
                 </div>
                 <div class="modal-body">
                     <div class="row g-2">
-                        <div class="col-12">
+                        <div class="col-12 d-none" id="editEntryWorksheetPane">
+                            <input type="hidden" name="type" id="editEntryResolvedType" value="">
+                            <input type="hidden" name="worksheet_category_key" id="editEntryWorksheetCategoryKey" value="">
+                            <label class="form-label small fw-bold">Entry group</label>
+                            <select id="editEntryGroup" class="form-select form-select-sm"></select>
+                            <div class="mt-2 d-none" id="editEntryExpenseBucketWrap">
+                                <label class="form-label small fw-bold">Expense section</label>
+                                <select id="editExpenseBucket" class="form-select form-select-sm"></select>
+                            </div>
+                            <div class="mt-2 d-none" id="editEntryLineWrap">
+                                <label class="form-label small fw-bold" id="editEntryLineLabel">Category line</label>
+                                <select id="editEntryLineSelect" class="form-select form-select-sm"></select>
+                            </div>
+                            <div class="mt-2 d-none" id="editEntryOtherWrap">
+                                <label class="form-label small fw-bold">Specify “Other” <span class="text-danger">*</span></label>
+                                <input type="text" name="other_specify" id="editEntryOtherSpecify" class="form-control form-control-sm" maxlength="255">
+                            </div>
+                            <div class="mt-2 d-none" id="editEntryDescWrap">
+                                <label class="form-label small fw-bold">Description <span id="editEntryDescRequiredStar" class="text-danger d-none">*</span></label>
+                                <input type="text" name="description" id="editWsDesc" class="form-control form-control-sm" maxlength="255">
+                            </div>
+                        </div>
+                        <div class="col-12 d-none" id="editEntryLegacyPane">
                             <label class="form-label small fw-bold">Type</label>
-                            <select name="type" id="editType" class="form-select form-select-sm" required>
+                            <select name="type" id="editLegacyType" class="form-select form-select-sm" required>
                                 @foreach(\App\Models\DailyCashEntry::$types as $val => $label)
                                 <option value="{{ $val }}">{{ $label }}</option>
                                 @if($val === 'INCOME')
@@ -542,54 +623,53 @@
                                 @endif
                                 @endforeach
                             </select>
-                        </div>
-                        <div class="col-12 js-edit-entry-classify">
-                            <label class="form-label small fw-bold">Subcategory <span class="text-muted fw-normal">(optional)</span></label>
-                            <select name="subcategory_key" id="editEntrySubcategory" class="form-select form-select-sm"></select>
-                            <div class="form-text small text-muted">Optional. Default skips an explicit bucket (keywords / Uncategorized). Use Monthly / Annual pencil to recategorize line groups.</div>
-                        </div>
-                        <div class="col-12 js-edit-entry-classify">
-                            <label class="form-label small fw-bold">Optional ledger tag</label>
-                            <select name="category_preset" id="editEntryCategoryPreset" class="form-select form-select-sm">
-                                <option value="none">— None —</option>
-                                @foreach(\App\Support\DailyCashflowCategories::presetsForType('INCOME') as $val => $label)
-                                    @if($val !== 'cash_from_bank')
-                                    <option value="{{ $val }}" data-preset-type="INCOME">{{ $label }}</option>
-                                    @endif
-                                @endforeach
-                                @foreach(\App\Support\DailyCashflowCategories::presetsForType('EXPENSES') as $val => $label)
-                                    <option value="{{ $val }}" data-preset-type="EXPENSES" class="d-none">{{ $label }}</option>
-                                @endforeach
-                                @foreach(\App\Support\DailyCashflowCategories::presetsForType('PURCHASES') as $val => $label)
-                                    <option value="{{ $val }}" data-preset-type="PURCHASES" class="d-none">{{ $label }}</option>
-                                @endforeach
-                                @foreach(\App\Support\DailyCashflowCategories::presetsForType('DISCRETIONARY') as $val => $label)
-                                    <option value="{{ $val }}" data-preset-type="DISCRETIONARY" class="d-none">{{ $label }}</option>
-                                @endforeach
-                                @foreach(\App\Support\DailyCashflowCategories::presetsForType('SAVINGS') as $val => $label)
-                                    <option value="{{ $val }}" data-preset-type="SAVINGS" class="d-none">{{ $label }}</option>
-                                @endforeach
-                                @foreach(\App\Support\DailyCashflowCategories::presetsForType('CAPITAL') as $val => $label)
-                                    <option value="{{ $val }}" data-preset-type="CAPITAL" class="d-none">{{ $label }}</option>
-                                @endforeach
-                                <option value="income_plus" data-preset-type="INCOME" class="d-none">Income + custom…</option>
-                                <option value="discretionary_plus" data-preset-type="DISCRETIONARY" class="d-none">Discretionary + custom…</option>
-                                <option value="savings_plus" data-preset-type="SAVINGS" class="d-none">Savings + custom…</option>
-                            </select>
-                        </div>
-                        <div class="col-12 d-none" id="editEntryCustomCategoryWrap">
-                            <label class="form-label small fw-bold">Custom category name</label>
-                            <input type="text" name="category_custom_piece" id="editEntryCategoryCustom" class="form-control form-control-sm" placeholder="e.g. SIDE BUSINESS">
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label small fw-bold">Description</label>
-                            <input type="text" name="description" id="editDesc"
-                                   class="form-control form-control-sm" required>
+                            <div class="mt-2 js-edit-entry-classify">
+                                <label class="form-label small fw-bold">Subcategory <span class="text-muted fw-normal">(optional)</span></label>
+                                <select name="subcategory_key" id="editEntrySubcategory" class="form-select form-select-sm"></select>
+                                <div class="form-text small text-muted">Optional. Default skips an explicit bucket (keywords / Uncategorized).</div>
+                            </div>
+                            <div class="mt-2 js-edit-entry-classify">
+                                <label class="form-label small fw-bold">Optional ledger tag</label>
+                                <select name="category_preset" id="editEntryCategoryPreset" class="form-select form-select-sm">
+                                    <option value="none">— None —</option>
+                                    @foreach(\App\Support\DailyCashflowCategories::presetsForType('INCOME') as $val => $label)
+                                        @if($val !== 'cash_from_bank')
+                                        <option value="{{ $val }}" data-preset-type="INCOME">{{ $label }}</option>
+                                        @endif
+                                    @endforeach
+                                    @foreach(\App\Support\DailyCashflowCategories::presetsForType('EXPENSES') as $val => $label)
+                                        <option value="{{ $val }}" data-preset-type="EXPENSES" class="d-none">{{ $label }}</option>
+                                    @endforeach
+                                    @foreach(\App\Support\DailyCashflowCategories::presetsForType('PURCHASES') as $val => $label)
+                                        <option value="{{ $val }}" data-preset-type="PURCHASES" class="d-none">{{ $label }}</option>
+                                    @endforeach
+                                    @foreach(\App\Support\DailyCashflowCategories::presetsForType('DISCRETIONARY') as $val => $label)
+                                        <option value="{{ $val }}" data-preset-type="DISCRETIONARY" class="d-none">{{ $label }}</option>
+                                    @endforeach
+                                    @foreach(\App\Support\DailyCashflowCategories::presetsForType('SAVINGS') as $val => $label)
+                                        <option value="{{ $val }}" data-preset-type="SAVINGS" class="d-none">{{ $label }}</option>
+                                    @endforeach
+                                    @foreach(\App\Support\DailyCashflowCategories::presetsForType('CAPITAL') as $val => $label)
+                                        <option value="{{ $val }}" data-preset-type="CAPITAL" class="d-none">{{ $label }}</option>
+                                    @endforeach
+                                    <option value="income_plus" data-preset-type="INCOME" class="d-none">Income + custom…</option>
+                                    <option value="discretionary_plus" data-preset-type="DISCRETIONARY" class="d-none">Discretionary + custom…</option>
+                                    <option value="savings_plus" data-preset-type="SAVINGS" class="d-none">Savings + custom…</option>
+                                </select>
+                            </div>
+                            <div class="mt-2 d-none" id="editEntryCustomCategoryWrap">
+                                <label class="form-label small fw-bold">Custom category name</label>
+                                <input type="text" name="category_custom_piece" id="editEntryCategoryCustom" class="form-control form-control-sm">
+                            </div>
+                            <div class="mt-2">
+                                <label class="form-label small fw-bold">Description</label>
+                                <input type="text" name="description" id="editLegacyDesc" class="form-control form-control-sm" required maxlength="255">
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label small fw-bold">Amount (₱)</label>
                             <input type="number" name="amount" id="editAmount"
-                                   step="0.01" min="0.01" class="form-control form-control-sm" required>
+                                   step="0.01" min="0" class="form-control form-control-sm" required>
                         </div>
                     </div>
                 </div>
@@ -603,8 +683,422 @@
 </div>
 
 @push('scripts')
+@php
+    $__dcfCashEntryMeta = $cashEntryFormMeta ?? ['groups' => [], 'labels' => []];
+    $__dcfWorksheetMeta = $dailyCashWorksheetEntryMeta ?? [
+        'capital' => ['lines' => []],
+        'income' => ['buckets' => []],
+        'expense' => ['buckets' => []],
+        'managed_keys' => [],
+    ];
+@endphp
 <script>
-window.cashEntryFormMeta = @json($cashEntryFormMeta ?? ['groups' => [], 'labels' => []]);
+window.cashEntryFormMeta = @json($__dcfCashEntryMeta);
+window.dailyCashWorksheetEntryMeta = @json($__dcfWorksheetMeta);
+
+window.__dailyCashEditLegacyMode = false;
+
+function dailyCashConfirmCarryImpact() {
+    return window.confirm(
+        'This will recalculate this day’s closing balance and automatically update opening balances on all later days in this cash period (including today), so carried cash stays in sync.\n\nContinue?'
+    );
+}
+function dailyCashConfirmDeleteEntry() {
+    return window.confirm(
+        'Delete this entry?\n\nThis will also recalculate this day and update opening balances on all later days in this cash period.\n\nContinue?'
+    );
+}
+
+/** Cash-from-bank worksheet description is required; stars shown via HTML span ids. */
+function dailyCashSetAddDescriptionRequireStar(showRequired) {
+    const star = document.getElementById('addEntryDescRequiredStar');
+    const descIn = document.getElementById('addEntryDescription');
+    if (descIn) descIn.required = !!showRequired;
+    if (star) star.classList.toggle('d-none', !showRequired);
+}
+
+function dailyCashSetEditDescriptionRequireStar(showRequired) {
+    const star = document.getElementById('editEntryDescRequiredStar');
+    const descIn = document.getElementById('editWsDesc');
+    if (descIn) descIn.required = !!showRequired;
+    if (star) star.classList.toggle('d-none', !showRequired);
+}
+
+function dailyCashAppendLineOption(sel, line) {
+    const o = document.createElement('option');
+    o.value = line.key;
+    o.textContent = line.label;
+    o.dataset.needsOther = line.needsOther ? '1' : '0';
+    sel.appendChild(o);
+}
+
+function dailyCashFillIncomeLineSelect(sel, meta) {
+    sel.innerHTML = '';
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = '— Choose income line —';
+    sel.appendChild(ph);
+    const buckets = (meta.income && meta.income.buckets) ? meta.income.buckets : [];
+    for (let i = 0; i < buckets.length; i++) {
+        const b = buckets[i];
+        const og = document.createElement('optgroup');
+        og.label = b.heading || ('Group ' + (i + 1));
+        const lines = b.lines || [];
+        for (let j = 0; j < lines.length; j++) {
+            dailyCashAppendLineOption(og, lines[j]);
+        }
+        sel.appendChild(og);
+    }
+}
+
+function dailyCashFillExpenseBucketSelect(sel, meta) {
+    sel.innerHTML = '';
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = '— Choose expense section —';
+    sel.appendChild(ph);
+    const buckets = (meta.expense && meta.expense.buckets) ? meta.expense.buckets : [];
+    for (let i = 0; i < buckets.length; i++) {
+        const o = document.createElement('option');
+        o.value = String(i);
+        o.textContent = buckets[i].heading || ('Section ' + (i + 1));
+        sel.appendChild(o);
+    }
+}
+
+function dailyCashFillExpenseLinesFromBucket(lineSel, meta, bucketIdx) {
+    lineSel.innerHTML = '';
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = '— Choose line —';
+    lineSel.appendChild(ph);
+    const buckets = (meta.expense && meta.expense.buckets) ? meta.expense.buckets : [];
+    const b = buckets[bucketIdx];
+    if (!b) return;
+    const lines = b.lines || [];
+    for (let j = 0; j < lines.length; j++) {
+        dailyCashAppendLineOption(lineSel, lines[j]);
+    }
+}
+
+function dailyCashSyncAddOtherDescVisibility() {
+    const lineSel = document.getElementById('addEntryLineSelect');
+    const keyHidden = document.getElementById('addEntryWorksheetCategoryKey');
+    const otherWrap = document.getElementById('addEntryOtherWrap');
+    const descWrap = document.getElementById('addEntryDescWrap');
+    const otherIn = document.getElementById('addEntryOtherSpecify');
+    const descIn = document.getElementById('addEntryDescription');
+    const grp = document.getElementById('addEntryGroup').value;
+
+    if (grp === 'CASH_FROM_BANK' || grp === '' || grp === 'CAPITAL') {
+        return;
+    }
+
+    const opt = lineSel.options[lineSel.selectedIndex];
+    const needsOther = opt && opt.dataset.needsOther === '1';
+    keyHidden.value = lineSel.value || '';
+
+    otherWrap.classList.toggle('d-none', !needsOther);
+    descWrap.classList.toggle('d-none', needsOther);
+    otherIn.disabled = !needsOther;
+    descIn.disabled = needsOther;
+    otherIn.required = needsOther;
+    descIn.required = false;
+    dailyCashSetAddDescriptionRequireStar(false);
+}
+
+function dailyCashSyncAddEntryForm(options) {
+    const resetInputs = !options || options.resetInputs !== false;
+    const meta = window.dailyCashWorksheetEntryMeta || {};
+    const grpEl = document.getElementById('addEntryGroup');
+    const grp = grpEl ? grpEl.value : '';
+    const typeHidden = document.getElementById('addEntryResolvedType');
+    const keyHidden = document.getElementById('addEntryWorksheetCategoryKey');
+    const expWrap = document.getElementById('addEntryExpenseBucketWrap');
+    const lineWrap = document.getElementById('addEntryLineWrap');
+    const lineSel = document.getElementById('addEntryLineSelect');
+    const bucketSel = document.getElementById('addExpenseBucket');
+    const otherWrap = document.getElementById('addEntryOtherWrap');
+    const descWrap = document.getElementById('addEntryDescWrap');
+    const otherIn = document.getElementById('addEntryOtherSpecify');
+    const descIn = document.getElementById('addEntryDescription');
+
+    typeHidden.value = grp === 'CASH_FROM_BANK' ? 'CASH_FROM_BANK' : grp;
+    keyHidden.value = '';
+    expWrap.classList.add('d-none');
+    lineWrap.classList.add('d-none');
+    otherWrap.classList.add('d-none');
+    descWrap.classList.add('d-none');
+    if (resetInputs) {
+        otherIn.value = '';
+        descIn.value = '';
+    }
+    otherIn.disabled = true;
+    descIn.disabled = true;
+    otherIn.required = false;
+    descIn.required = false;
+    dailyCashSetAddDescriptionRequireStar(false);
+
+    if (!grp) return;
+
+    if (grp === 'CASH_FROM_BANK') {
+        descWrap.classList.remove('d-none');
+        descIn.disabled = false;
+        dailyCashSetAddDescriptionRequireStar(true);
+        return;
+    }
+
+    if (grp === 'CAPITAL') {
+        const lines = (meta.capital && meta.capital.lines) ? meta.capital.lines : [];
+        if (lines[0]) keyHidden.value = lines[0].key;
+        descWrap.classList.remove('d-none');
+        descIn.disabled = false;
+        dailyCashSetAddDescriptionRequireStar(false);
+        return;
+    }
+
+    if (grp === 'INCOME') {
+        lineWrap.classList.remove('d-none');
+        dailyCashFillIncomeLineSelect(lineSel, meta);
+        dailyCashSyncAddOtherDescVisibility();
+        return;
+    }
+
+    if (grp === 'EXPENSES') {
+        expWrap.classList.remove('d-none');
+        lineWrap.classList.remove('d-none');
+        dailyCashFillExpenseBucketSelect(bucketSel, meta);
+        lineSel.innerHTML = '';
+        const ph = document.createElement('option');
+        ph.value = '';
+        ph.textContent = '— Choose expense section first —';
+        lineSel.appendChild(ph);
+        lineSel.disabled = bucketSel.value === '';
+        dailyCashSyncAddOtherDescVisibility();
+    }
+}
+
+function dailyCashAddEntrySubmit() {
+    if (!dailyCashConfirmCarryImpact()) return false;
+    const grp = document.getElementById('addEntryGroup').value;
+    if (!grp) {
+        window.alert('Choose an entry group.');
+        return false;
+    }
+    if (grp !== 'CASH_FROM_BANK' && grp !== 'CAPITAL') {
+        dailyCashSyncAddOtherDescVisibility();
+        if (!document.getElementById('addEntryWorksheetCategoryKey').value) {
+            window.alert('Choose a worksheet line.');
+            return false;
+        }
+    }
+    return true;
+}
+
+function dailyCashSetPaneInputsDisabled(paneEl, disabled) {
+    if (!paneEl) return;
+    paneEl.querySelectorAll('input,select,textarea').forEach(function (el) {
+        el.disabled = disabled;
+    });
+}
+
+function dailyCashFillEditGroupSelect(sel) {
+    if (!sel) return;
+    sel.innerHTML = '';
+    const opts = [
+        ['', '— Choose —'],
+        ['CASH_FROM_BANK', 'Cash from Bank — Withdrawals'],
+        ['CAPITAL', 'Capital'],
+        ['INCOME', 'Income'],
+        ['EXPENSES', 'Expenses'],
+    ];
+    for (let i = 0; i < opts.length; i++) {
+        const o = document.createElement('option');
+        o.value = opts[i][0];
+        o.textContent = opts[i][1];
+        sel.appendChild(o);
+    }
+}
+
+function dailyCashSyncEditOtherDescVisibility() {
+    const grp = document.getElementById('editEntryGroup').value;
+    const lineSel = document.getElementById('editEntryLineSelect');
+    const keyHidden = document.getElementById('editEntryWorksheetCategoryKey');
+    const otherWrap = document.getElementById('editEntryOtherWrap');
+    const descWrap = document.getElementById('editEntryDescWrap');
+    const otherIn = document.getElementById('editEntryOtherSpecify');
+    const descIn = document.getElementById('editWsDesc');
+
+    if (grp === 'CASH_FROM_BANK' || grp === '' || grp === 'CAPITAL') {
+        return;
+    }
+
+    const opt = lineSel.options[lineSel.selectedIndex];
+    const needsOther = opt && opt.dataset.needsOther === '1';
+    keyHidden.value = lineSel.value || '';
+
+    otherWrap.classList.toggle('d-none', !needsOther);
+    descWrap.classList.toggle('d-none', needsOther);
+    otherIn.disabled = !needsOther;
+    descIn.disabled = needsOther;
+    otherIn.required = needsOther;
+    descIn.required = false;
+    dailyCashSetEditDescriptionRequireStar(false);
+}
+
+function dailyCashSyncEditWorksheetForm(options) {
+    const resetInputs = !options || options.resetInputs !== false;
+    const meta = window.dailyCashWorksheetEntryMeta || {};
+    const grpEl = document.getElementById('editEntryGroup');
+    const grp = grpEl ? grpEl.value : '';
+    const typeHidden = document.getElementById('editEntryResolvedType');
+    const keyHidden = document.getElementById('editEntryWorksheetCategoryKey');
+    const expWrap = document.getElementById('editEntryExpenseBucketWrap');
+    const lineWrap = document.getElementById('editEntryLineWrap');
+    const lineSel = document.getElementById('editEntryLineSelect');
+    const bucketSel = document.getElementById('editExpenseBucket');
+    const otherWrap = document.getElementById('editEntryOtherWrap');
+    const descWrap = document.getElementById('editEntryDescWrap');
+    const otherIn = document.getElementById('editEntryOtherSpecify');
+    const descIn = document.getElementById('editWsDesc');
+
+    typeHidden.value = grp === 'CASH_FROM_BANK' ? 'CASH_FROM_BANK' : grp;
+    keyHidden.value = '';
+    expWrap.classList.add('d-none');
+    lineWrap.classList.add('d-none');
+    otherWrap.classList.add('d-none');
+    descWrap.classList.add('d-none');
+    if (resetInputs) {
+        otherIn.value = '';
+        descIn.value = '';
+    }
+    otherIn.disabled = true;
+    descIn.disabled = true;
+    otherIn.required = false;
+    descIn.required = false;
+    dailyCashSetEditDescriptionRequireStar(false);
+
+    if (!grp) return;
+
+    if (grp === 'CASH_FROM_BANK') {
+        descWrap.classList.remove('d-none');
+        descIn.disabled = false;
+        dailyCashSetEditDescriptionRequireStar(true);
+        return;
+    }
+
+    if (grp === 'CAPITAL') {
+        const lines = (meta.capital && meta.capital.lines) ? meta.capital.lines : [];
+        if (lines[0]) keyHidden.value = lines[0].key;
+        descWrap.classList.remove('d-none');
+        descIn.disabled = false;
+        dailyCashSetEditDescriptionRequireStar(false);
+        return;
+    }
+
+    if (grp === 'INCOME') {
+        lineWrap.classList.remove('d-none');
+        dailyCashFillIncomeLineSelect(lineSel, meta);
+        dailyCashSyncEditOtherDescVisibility();
+        return;
+    }
+
+    if (grp === 'EXPENSES') {
+        expWrap.classList.remove('d-none');
+        lineWrap.classList.remove('d-none');
+        dailyCashFillExpenseBucketSelect(bucketSel, meta);
+        lineSel.innerHTML = '';
+        const ph = document.createElement('option');
+        ph.value = '';
+        ph.textContent = '— Choose expense section first —';
+        lineSel.appendChild(ph);
+        lineSel.disabled = bucketSel.value === '';
+        dailyCashSyncEditOtherDescVisibility();
+    }
+}
+
+function dailyCashPrefillEditWorksheet(isBank, ledgerType, categoryKey, description, amount) {
+    const meta = window.dailyCashWorksheetEntryMeta || {};
+    const wsPane = document.getElementById('editEntryWorksheetPane');
+    dailyCashSetPaneInputsDisabled(wsPane, false);
+
+    const grp = document.getElementById('editEntryGroup');
+    const lineSel = document.getElementById('editEntryLineSelect');
+    const bucketSel = document.getElementById('editExpenseBucket');
+    const otherIn = document.getElementById('editEntryOtherSpecify');
+    const descIn = document.getElementById('editWsDesc');
+
+    document.getElementById('editAmount').value = amount;
+
+    if (isBank) {
+        grp.value = 'CASH_FROM_BANK';
+        dailyCashSyncEditWorksheetForm({ resetInputs: false });
+        descIn.value = description;
+        return;
+    }
+
+    let key = categoryKey || '';
+    if (ledgerType === 'CAPITAL' && !key) {
+        const lines = (meta.capital && meta.capital.lines) ? meta.capital.lines : [];
+        key = lines[0] ? lines[0].key : '';
+    }
+
+    const managed = meta.managed_keys || [];
+    if (managed.indexOf(key) === -1) {
+        return;
+    }
+
+    if (ledgerType === 'CAPITAL') {
+        grp.value = 'CAPITAL';
+        dailyCashSyncEditWorksheetForm({ resetInputs: false });
+        descIn.value = description;
+        return;
+    }
+
+    if (ledgerType === 'INCOME') {
+        grp.value = 'INCOME';
+        dailyCashSyncEditWorksheetForm({ resetInputs: false });
+        lineSel.value = key;
+        if (lineSel.value !== key) {
+            dailyCashFillIncomeLineSelect(lineSel, meta);
+            lineSel.value = key;
+        }
+        dailyCashSyncEditOtherDescVisibility();
+        const opt = lineSel.options[lineSel.selectedIndex];
+        const needsOther = opt && opt.dataset.needsOther === '1';
+        if (needsOther) otherIn.value = description;
+        else descIn.value = description;
+        return;
+    }
+
+    if (ledgerType === 'EXPENSES') {
+        grp.value = 'EXPENSES';
+        dailyCashSyncEditWorksheetForm({ resetInputs: false });
+        const buckets = (meta.expense && meta.expense.buckets) ? meta.expense.buckets : [];
+        let bidx = -1;
+        for (let i = 0; i < buckets.length; i++) {
+            const lines = buckets[i].lines || [];
+            for (let j = 0; j < lines.length; j++) {
+                if (lines[j].key === key) {
+                    bidx = i;
+                    break;
+                }
+            }
+            if (bidx !== -1) break;
+        }
+        if (bidx !== -1) {
+            bucketSel.value = String(bidx);
+            dailyCashFillExpenseLinesFromBucket(lineSel, meta, bidx);
+            lineSel.disabled = false;
+            lineSel.value = key;
+        }
+        dailyCashSyncEditOtherDescVisibility();
+        const opt = lineSel.options[lineSel.selectedIndex];
+        const needsOther = opt && opt.dataset.needsOther === '1';
+        if (needsOther) otherIn.value = description;
+        else descIn.value = description;
+    }
+}
 
 function dailyCashFillSubcategorySelect(selectEl, ledgerType) {
     if (!selectEl || !window.cashEntryFormMeta || !window.cashEntryFormMeta.groups) return;
@@ -652,12 +1146,8 @@ function dailyCashSyncPresetOptionsForType(selectEl, ledgerType, skipValueReset)
         selectEl.value = 'none';
         cur = 'none';
     }
-    const wrap = selectEl.id === 'addEntryCategoryPreset'
-        ? document.getElementById('addEntryCustomCategoryWrap')
-        : document.getElementById('editEntryCustomCategoryWrap');
-    const customIn = selectEl.id === 'addEntryCategoryPreset'
-        ? document.getElementById('addEntryCategoryCustom')
-        : document.getElementById('editEntryCategoryCustom');
+    const wrap = document.getElementById('editEntryCustomCategoryWrap');
+    const customIn = document.getElementById('editEntryCategoryCustom');
     if (wrap) {
         const show = cur === 'income_plus' || cur === 'discretionary_plus' || cur === 'savings_plus';
         wrap.classList.toggle('d-none', !show);
@@ -667,116 +1157,206 @@ function dailyCashSyncPresetOptionsForType(selectEl, ledgerType, skipValueReset)
     }
 }
 
-function dailyCashSetClassifyVisibility(isBank, prefix) {
-    const sub = document.getElementById(prefix === 'add' ? 'addEntrySubcategory' : 'editEntrySubcategory');
-    const preset = document.getElementById(prefix === 'add' ? 'addEntryCategoryPreset' : 'editEntryCategoryPreset');
-    document.querySelectorAll('.js-' + prefix + '-entry-classify').forEach(function (el) {
+function dailyCashSetLegacyClassifyVisibility(isBank) {
+    document.querySelectorAll('.js-edit-entry-classify').forEach(function (el) {
         el.classList.toggle('d-none', isBank);
     });
+    const sub = document.getElementById('editEntrySubcategory');
+    const preset = document.getElementById('editEntryCategoryPreset');
     if (sub) sub.disabled = isBank;
     if (preset) preset.disabled = isBank;
 }
 
-function dailyCashConfirmCarryImpact() {
-    return window.confirm(
-        'This will recalculate this day’s closing balance and automatically update opening balances on all later days in this cash period (including today), so carried cash stays in sync.\n\nContinue?'
-    );
-}
-function dailyCashConfirmDeleteEntry() {
-    return window.confirm(
-        'Delete this entry?\n\nThis will also recalculate this day and update opening balances on all later days in this cash period.\n\nContinue?'
-    );
-}
 function editEntry(id, type, description, amount, category, subKey) {
     document.getElementById('editEntryForm').action =
         '{{ url("daily-cash/".$dailyCash->id."/entries") }}/' + id;
-    let formType = type;
-    if (type === 'INCOME' && category === 'cash_from_bank') {
-        formType = 'CASH_FROM_BANK';
-    }
-    document.getElementById('editType').value = formType;
-    document.getElementById('editDesc').value   = description;
-    document.getElementById('editAmount').value = amount;
-    const bank = formType === 'CASH_FROM_BANK';
-    dailyCashSetClassifyVisibility(bank, 'edit');
-    const ledgerType = bank ? 'INCOME' : type;
-    dailyCashFillSubcategorySelect(document.getElementById('editEntrySubcategory'), ledgerType);
-    const subEl = document.getElementById('editEntrySubcategory');
-    if (subEl) {
-        subEl.value = subKey ? subKey : 'auto';
-        if (!Array.from(subEl.options).some(function (o) { return o.value === subEl.value; })) {
-            subEl.value = 'auto';
+
+    const meta = window.dailyCashWorksheetEntryMeta || {};
+    const managed = meta.managed_keys || [];
+    const cat = category ? String(category) : '';
+    const formBank = type === 'INCOME' && cat === 'cash_from_bank';
+    const worksheetKey = (type === 'CAPITAL' && cat === '') ? (((meta.capital && meta.capital.lines) || [])[0] || {}).key : cat;
+    const useWorksheet = formBank || (worksheetKey && managed.indexOf(worksheetKey) !== -1);
+
+    const wsPane = document.getElementById('editEntryWorksheetPane');
+    const legPane = document.getElementById('editEntryLegacyPane');
+
+    if (useWorksheet) {
+        window.__dailyCashEditLegacyMode = false;
+        wsPane.classList.remove('d-none');
+        legPane.classList.add('d-none');
+        dailyCashSetPaneInputsDisabled(wsPane, false);
+        dailyCashSetPaneInputsDisabled(legPane, true);
+        dailyCashFillEditGroupSelect(document.getElementById('editEntryGroup'));
+        dailyCashPrefillEditWorksheet(formBank, type, worksheetKey, description, amount);
+    } else {
+        window.__dailyCashEditLegacyMode = true;
+        wsPane.classList.add('d-none');
+        legPane.classList.remove('d-none');
+        dailyCashSetPaneInputsDisabled(wsPane, true);
+        dailyCashSetPaneInputsDisabled(legPane, false);
+
+        let formType = type;
+        if (type === 'INCOME' && cat === 'cash_from_bank') {
+            formType = 'CASH_FROM_BANK';
         }
-    }
-    (function () {
-        const presetEl = document.getElementById('editEntryCategoryPreset');
-        if (!presetEl) return;
-        let preset = 'none';
-        let custom = '';
-        if (category) {
-            const c = String(category);
-            if (c.startsWith('income:')) {
-                preset = 'income_plus';
-                custom = c.slice(7);
-            } else if (c.startsWith('discretionary:')) {
-                preset = 'discretionary_plus';
-                custom = c.slice(14);
-            } else if (c.startsWith('savings:')) {
-                preset = 'savings_plus';
-                custom = c.slice(8);
-            } else {
-                preset = c;
+        document.getElementById('editLegacyType').value = formType;
+        document.getElementById('editLegacyDesc').value = description;
+        document.getElementById('editAmount').value = amount;
+
+        const bank = formType === 'CASH_FROM_BANK';
+        dailyCashSetLegacyClassifyVisibility(bank);
+        const ledgerType = bank ? 'INCOME' : type;
+        dailyCashFillSubcategorySelect(document.getElementById('editEntrySubcategory'), ledgerType);
+        const subEl = document.getElementById('editEntrySubcategory');
+        if (subEl) {
+            subEl.value = subKey ? subKey : 'auto';
+            if (!Array.from(subEl.options).some(function (o) { return o.value === subEl.value; })) {
+                subEl.value = 'auto';
             }
         }
-        dailyCashSyncPresetOptionsForType(presetEl, ledgerType, true);
-        presetEl.value = preset;
-        if (!Array.from(presetEl.options).some(function (o) { return o.value === presetEl.value; })) {
-            presetEl.value = 'none';
-        }
-        const customIn = document.getElementById('editEntryCategoryCustom');
-        if (customIn) customIn.value = custom;
-        dailyCashSyncPresetOptionsForType(presetEl, ledgerType, false);
-    })();
+        (function () {
+            const presetEl = document.getElementById('editEntryCategoryPreset');
+            if (!presetEl) return;
+            let preset = 'none';
+            let custom = '';
+            if (category) {
+                const c = String(category);
+                if (c.startsWith('income:')) {
+                    preset = 'income_plus';
+                    custom = c.slice(7);
+                } else if (c.startsWith('discretionary:')) {
+                    preset = 'discretionary_plus';
+                    custom = c.slice(14);
+                } else if (c.startsWith('savings:')) {
+                    preset = 'savings_plus';
+                    custom = c.slice(8);
+                } else {
+                    preset = c;
+                }
+            }
+            dailyCashSyncPresetOptionsForType(presetEl, ledgerType, true);
+            presetEl.value = preset;
+            if (!Array.from(presetEl.options).some(function (o) { return o.value === presetEl.value; })) {
+                presetEl.value = 'none';
+            }
+            const customIn = document.getElementById('editEntryCategoryCustom');
+            if (customIn) customIn.value = custom;
+            dailyCashSyncPresetOptionsForType(presetEl, ledgerType, false);
+        })();
+    }
+
     new bootstrap.Modal(document.getElementById('editEntryModal')).show();
 }
+
+function dailyCashEditEntrySubmit() {
+    if (!dailyCashConfirmCarryImpact()) return false;
+    if (!window.__dailyCashEditLegacyMode) {
+        const grp = document.getElementById('editEntryGroup').value;
+        if (!grp) {
+            window.alert('Choose an entry group.');
+            return false;
+        }
+        if (grp !== 'CASH_FROM_BANK' && grp !== 'CAPITAL') {
+            dailyCashSyncEditOtherDescVisibility();
+            if (!document.getElementById('editEntryWorksheetCategoryKey').value) {
+                window.alert('Choose a worksheet line.');
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 (function () {
-    const addType = document.getElementById('addEntryType');
-    const addSub = document.getElementById('addEntrySubcategory');
-    const addPreset = document.getElementById('addEntryCategoryPreset');
-    function syncAdd() {
-        if (!addType) return;
-        const bank = addType.value === 'CASH_FROM_BANK';
-        dailyCashSetClassifyVisibility(bank, 'add');
-        const ledgerType = bank ? 'INCOME' : addType.value;
-        dailyCashFillSubcategorySelect(addSub, ledgerType);
-        dailyCashSyncPresetOptionsForType(addPreset, ledgerType);
+    const grp = document.getElementById('addEntryGroup');
+    const bucketSel = document.getElementById('addExpenseBucket');
+    const lineSel = document.getElementById('addEntryLineSelect');
+
+    if (grp) {
+        grp.addEventListener('change', function () {
+            dailyCashSyncAddEntryForm({ resetInputs: true });
+        });
     }
-    if (addType) {
-        addType.addEventListener('change', syncAdd);
+    if (bucketSel) {
+        bucketSel.addEventListener('change', function () {
+            const meta = window.dailyCashWorksheetEntryMeta || {};
+            const idx = parseInt(bucketSel.value, 10);
+            if (bucketSel.value === '' || isNaN(idx)) {
+                lineSel.innerHTML = '';
+                const ph = document.createElement('option');
+                ph.value = '';
+                ph.textContent = '— Choose expense section first —';
+                lineSel.appendChild(ph);
+                lineSel.disabled = true;
+            } else {
+                dailyCashFillExpenseLinesFromBucket(lineSel, meta, idx);
+                lineSel.disabled = false;
+            }
+            dailyCashSyncAddOtherDescVisibility();
+        });
     }
-    if (addPreset) {
-        addPreset.addEventListener('change', function () { dailyCashSyncPresetOptionsForType(addPreset, addType.value === 'CASH_FROM_BANK' ? 'INCOME' : addType.value); });
+    if (lineSel) {
+        lineSel.addEventListener('change', dailyCashSyncAddOtherDescVisibility);
     }
-    const editType = document.getElementById('editType');
+
+    const editGrp = document.getElementById('editEntryGroup');
+    const editBucket = document.getElementById('editExpenseBucket');
+    const editLine = document.getElementById('editEntryLineSelect');
+
+    dailyCashFillEditGroupSelect(editGrp);
+
+    if (editGrp) {
+        editGrp.addEventListener('change', function () {
+            dailyCashSyncEditWorksheetForm({ resetInputs: true });
+        });
+    }
+    if (editBucket) {
+        editBucket.addEventListener('change', function () {
+            const meta = window.dailyCashWorksheetEntryMeta || {};
+            const idx = parseInt(editBucket.value, 10);
+            if (editBucket.value === '' || isNaN(idx)) {
+                editLine.innerHTML = '';
+                const ph = document.createElement('option');
+                ph.value = '';
+                ph.textContent = '— Choose expense section first —';
+                editLine.appendChild(ph);
+                editLine.disabled = true;
+            } else {
+                dailyCashFillExpenseLinesFromBucket(editLine, meta, idx);
+                editLine.disabled = false;
+            }
+            dailyCashSyncEditOtherDescVisibility();
+        });
+    }
+    if (editLine) {
+        editLine.addEventListener('change', dailyCashSyncEditOtherDescVisibility);
+    }
+
+    const editLegacyType = document.getElementById('editLegacyType');
     const editPreset = document.getElementById('editEntryCategoryPreset');
-    if (editType) {
-        editType.addEventListener('change', function () {
-            const bank = editType.value === 'CASH_FROM_BANK';
-            dailyCashSetClassifyVisibility(bank, 'edit');
-            const ledgerType = bank ? 'INCOME' : editType.value;
+    if (editLegacyType) {
+        editLegacyType.addEventListener('change', function () {
+            const bank = editLegacyType.value === 'CASH_FROM_BANK';
+            dailyCashSetLegacyClassifyVisibility(bank);
+            const ledgerType = bank ? 'INCOME' : editLegacyType.value;
             dailyCashFillSubcategorySelect(document.getElementById('editEntrySubcategory'), ledgerType);
             dailyCashSyncPresetOptionsForType(editPreset, ledgerType);
         });
     }
     if (editPreset) {
         editPreset.addEventListener('change', function () {
-            const bank = editType && editType.value === 'CASH_FROM_BANK';
-            const ledgerType = bank ? 'INCOME' : (editType ? editType.value : 'INCOME');
+            const bank = editLegacyType && editLegacyType.value === 'CASH_FROM_BANK';
+            const ledgerType = bank ? 'INCOME' : (editLegacyType ? editLegacyType.value : 'INCOME');
             dailyCashSyncPresetOptionsForType(editPreset, ledgerType);
         });
     }
-    document.getElementById('addEntryModal')?.addEventListener('show.bs.modal', syncAdd);
-    syncAdd();
+
+    document.getElementById('addEntryModal')?.addEventListener('show.bs.modal', function () {
+        const g = document.getElementById('addEntryGroup');
+        if (g) g.selectedIndex = 0;
+        dailyCashSyncAddEntryForm({ resetInputs: true });
+    });
 })();
 </script>
 @endpush

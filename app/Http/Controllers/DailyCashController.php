@@ -10,10 +10,12 @@ use App\Models\Deposit;
 use App\Services\DailyCashLedgerService;
 use App\Support\CashflowSubcategoryClassifier;
 use App\Support\DailyCashflowCategories;
+use App\Support\DailyCashMetroLedger;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class DailyCashController extends Controller
 {
@@ -118,14 +120,42 @@ class DailyCashController extends Controller
         }
 
         $days = null;
-        $monthlyMatrix = null;
-        $annualMatrix = null;
-        $filterYear = (int) $request->get('year', now()->year);
-        $years = DailyCashDay::selectRaw('YEAR(date) as yr')->groupBy('yr')->orderByDesc('yr')->pluck('yr');
+        $monthlyMetroMatrix = null;
+        $annualCashflowGrid = null;
+
+        [$metroPeriodYear, $metroPeriodMonth, $metroPeriodValue] = $this->resolveMetroStatementPeriod($request);
+
+        $annualYear = (int) $request->get('year', now()->year);
+        if ($annualYear < 2000 || $annualYear > 2100) {
+            $annualYear = (int) now()->year;
+        }
+
+        $annualYears = DailyCashDay::query()
+            ->selectRaw('YEAR(date) as yr')
+            ->groupBy('yr')
+            ->orderByDesc('yr')
+            ->pluck('yr')
+            ->map(fn ($y) => (int) $y)
+            ->values()
+            ->all();
+        if ($annualYears === []) {
+            $annualYears = [$annualYear];
+        }
+        if (! in_array($annualYear, $annualYears, true)) {
+            $annualYears[] = $annualYear;
+            rsort($annualYears);
+        }
+
+        $statementYear = match ($tab) {
+            'monthly' => $metroPeriodYear,
+            'annual' => $annualYear,
+            default => (int) $request->get('year', now()->year),
+        };
+
         if ($tab === 'monthly') {
-            $monthlyMatrix = $this->buildMonthlyCashFlowMatrix($filterYear);
+            $monthlyMetroMatrix = DailyCashMetroLedger::buildMonthlyMetroSheetForMonth($metroPeriodYear, $metroPeriodMonth);
         } elseif ($tab === 'annual') {
-            $annualMatrix = $this->buildAnnualCashFlowMatrix();
+            $annualCashflowGrid = DailyCashMetroLedger::buildAnnualCashflowGrid($annualYear);
         } else {
             $days = DailyCashDay::with('entries')->orderByDesc('date')->paginate(30);
         }
@@ -137,7 +167,7 @@ class DailyCashController extends Controller
             $subcategoryLabelsByType[$t] = CashflowSubcategoryClassifier::designatedLabelsMapForType($t);
         }
 
-        return view('daily-cash.index', compact('days', 'monthlyMatrix', 'annualMatrix', 'tab', 'filterYear', 'years', 'subcategoryOptionsByType', 'subcategoryLabelsByType'));
+        return view('daily-cash.index', compact('days', 'monthlyMetroMatrix', 'annualCashflowGrid', 'annualYear', 'annualYears', 'tab', 'statementYear', 'metroPeriodValue', 'subcategoryOptionsByType', 'subcategoryLabelsByType'));
     }
 
     /** Apply subcategory override to all ledger lines matching type + description + current effective subcategory for a calendar year. */
@@ -196,18 +226,21 @@ class DailyCashController extends Controller
         ])->with('success', 'Subcategory updated for '.$n.' ledger line'.($n === 1 ? '' : 's').'.');
     }
 
-    private function entryTotals($entries): array
+    /** @return array{0: int, 1: int, 2: string} year, month (1–12), period query value YYYY-MM */
+    private function resolveMetroStatementPeriod(Request $request): array
     {
-        $capital = (float) $entries->where('type', 'CAPITAL')->sum('amount');
-        $income = (float) $entries->where('type', 'INCOME')->sum('amount');
-        $expenses = (float) $entries->whereIn('type', ['EXPENSES', 'PURCHASES'])->sum('amount');
-        $discretionary = (float) $entries->where('type', 'DISCRETIONARY')->sum('amount');
-        $savings = (float) $entries->where('type', 'SAVINGS')->sum('amount');
-        $other = (float) $entries->where('type', 'OTHER')->sum('amount');
+        $periodParam = $request->query('period');
+        if (is_string($periodParam) && preg_match('/^(\d{4})-(\d{2})$/', $periodParam, $m)) {
+            $y = (int) $m[1];
+            $mo = (int) $m[2];
+            if ($y >= 2000 && $y <= 2100 && $mo >= 1 && $mo <= 12) {
+                return [$y, $mo, sprintf('%04d-%02d', $y, $mo)];
+            }
+        }
 
-        return compact('capital', 'income', 'expenses', 'discretionary', 'savings', 'other') + [
-            'net' => $capital + $income - $expenses - $discretionary - $savings - $other,
-        ];
+        $now = Carbon::now();
+
+        return [(int) $now->year, (int) $now->month, $now->format('Y-m')];
     }
 
     /** Collapse whitespace; compare case-insensitively by uppercasing (monthly/yearly grouping). */
@@ -216,217 +249,6 @@ class DailyCashController extends Controller
         $s = trim(preg_replace('/\s+/u', ' ', $description));
 
         return mb_strtoupper($s, 'UTF-8');
-    }
-
-    private function titleCaseDescriptionLabel(string $normalizedUpper): string
-    {
-        if ($normalizedUpper === '') {
-            return '';
-        }
-
-        $lower = mb_strtolower($normalizedUpper, 'UTF-8');
-
-        return mb_convert_case($lower, MB_CASE_TITLE, 'UTF-8');
-    }
-
-    /**
-     * Spreadsheet-style monthly grid: rows = type + normalized description, columns = Jan–Dec.
-     *
-     * @return array<string, mixed>
-     */
-    private function buildMonthlyCashFlowMatrix(int $year): array
-    {
-        $entries = DailyCashEntry::query()
-            ->with('day')
-            ->whereHas('day', fn ($q) => $q->whereYear('date', $year))
-            ->get();
-
-        $linesMap = [];
-        foreach ($entries as $e) {
-            $m = (int) $e->day->date->format('n');
-            $norm = $this->normalizeLedgerDescriptionKey((string) $e->description);
-            $sub = CashflowSubcategoryClassifier::resolve($e->type, (string) $e->description, $e->subcategory_override);
-            $key = $e->type.'|'.$norm.'|'.$sub['key'];
-            if (! isset($linesMap[$key])) {
-                $linesMap[$key] = [
-                    'type' => $e->type,
-                    'description_norm' => $norm,
-                    'subcategory_key' => $sub['key'],
-                    'subcategory_label' => $sub['label'],
-                    'description_display' => $this->titleCaseDescriptionLabel($norm) ?: '—',
-                    'amounts' => array_fill(1, 12, 0.0),
-                ];
-            }
-            $linesMap[$key]['amounts'][$m] += (float) $e->amount;
-        }
-
-        $lines = $this->sortCashflowMatrixLines(array_values($linesMap));
-
-        foreach ($lines as $i => $_) {
-            $lines[$i]['row_total'] = round(array_sum($lines[$i]['amounts']), 2);
-        }
-
-        $netByMonth = array_fill(1, 12, 0.0);
-        for ($m = 1; $m <= 12; $m++) {
-            $subset = $entries->filter(fn ($e) => (int) $e->day->date->format('n') === $m);
-            $netByMonth[$m] = $subset->isEmpty() ? 0.0 : round((float) ($this->entryTotals($subset)['net'] ?? 0.0), 2);
-        }
-
-        $yearTotalNet = round(array_sum($netByMonth), 2);
-
-        $monthLabels = [1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr', 5 => 'May', 6 => 'Jun', 7 => 'Jul', 8 => 'Aug', 9 => 'Sep', 10 => 'Oct', 11 => 'Nov', 12 => 'Dec'];
-        $columns = [];
-        for ($m = 1; $m <= 12; $m++) {
-            $columns[] = ['key' => $m, 'label' => $monthLabels[$m]];
-        }
-
-        return [
-            'mode' => 'monthly',
-            'year' => $year,
-            'columns' => $columns,
-            'lines' => $lines,
-            'net_footer' => $netByMonth,
-            'corner_net' => $yearTotalNet,
-            'pencil_year' => $year,
-            'data_tab' => 'monthly',
-            'header_title' => 'Monthly cash flow',
-            'header_metric_label' => 'Year net:',
-            'info_text' => 'Rows group the same <strong>type</strong> and <strong>description</strong> (spacing and caps ignored). <strong>Subcategory</strong> uses a manual override when you set one (pencil); otherwise it follows description keywords. Columns are <strong>calendar months</strong> left to right.',
-            'footer_row_label' => 'Net (month)',
-            'scroll_hint' => 'Scroll sideways to see all months →',
-            'empty_context' => (string) $year,
-            'year_total_net' => $yearTotalNet,
-            'net_by_month' => $netByMonth,
-        ];
-    }
-
-    /**
-     * Same table as monthly, but columns = calendar years (oldest → newest). Rows aggregate the same line key across years.
-     *
-     * @return array<string, mixed>
-     */
-    private function buildAnnualCashFlowMatrix(): array
-    {
-        $yearsAsc = DailyCashDay::query()
-            ->selectRaw('YEAR(date) as yr')
-            ->groupBy('yr')
-            ->orderBy('yr')
-            ->pluck('yr')
-            ->map(fn ($y) => (int) $y)
-            ->values()
-            ->all();
-
-        if ($yearsAsc === []) {
-            return [
-                'mode' => 'annual',
-                'year' => null,
-                'columns' => [],
-                'lines' => [],
-                'net_footer' => [],
-                'corner_net' => 0.0,
-                'pencil_year' => (int) now()->year,
-                'data_tab' => 'annual',
-                'header_title' => 'Annual cash flow',
-                'header_metric_label' => 'Combined net (sum of year nets):',
-                'info_text' => 'Same layout as <strong>Monthly</strong>; columns are <strong>calendar years</strong> (oldest to newest). Recategorize applies to the <strong>latest year</strong> shown — use Monthly for a single year or repeat for other years.',
-                'footer_row_label' => 'Net (year)',
-                'scroll_hint' => 'Scroll sideways to see all years →',
-                'empty_context' => '',
-                'year_total_net' => 0.0,
-                'net_by_month' => [],
-            ];
-        }
-
-        $yMin = min($yearsAsc);
-        $yMax = max($yearsAsc);
-
-        $entries = DailyCashEntry::query()
-            ->with('day')
-            ->whereHas('day', fn ($q) => $q->whereYear('date', '>=', $yMin)->whereYear('date', '<=', $yMax))
-            ->get();
-
-        $linesMap = [];
-        foreach ($entries as $e) {
-            $y = (int) $e->day->date->format('Y');
-            $norm = $this->normalizeLedgerDescriptionKey((string) $e->description);
-            $sub = CashflowSubcategoryClassifier::resolve($e->type, (string) $e->description, $e->subcategory_override);
-            $key = $e->type.'|'.$norm.'|'.$sub['key'];
-            if (! isset($linesMap[$key])) {
-                $linesMap[$key] = [
-                    'type' => $e->type,
-                    'description_norm' => $norm,
-                    'subcategory_key' => $sub['key'],
-                    'subcategory_label' => $sub['label'],
-                    'description_display' => $this->titleCaseDescriptionLabel($norm) ?: '—',
-                    'amounts' => array_fill_keys($yearsAsc, 0.0),
-                ];
-            }
-            $linesMap[$key]['amounts'][$y] = ($linesMap[$key]['amounts'][$y] ?? 0.0) + (float) $e->amount;
-        }
-
-        $lines = $this->sortCashflowMatrixLines(array_values($linesMap));
-
-        foreach ($lines as $i => $_) {
-            $lines[$i]['row_total'] = round(array_sum($lines[$i]['amounts']), 2);
-        }
-
-        $netFooter = [];
-        foreach ($yearsAsc as $y) {
-            $subset = $entries->filter(fn ($e) => (int) $e->day->date->format('Y') === $y);
-            $netFooter[$y] = $subset->isEmpty() ? 0.0 : round((float) ($this->entryTotals($subset)['net'] ?? 0.0), 2);
-        }
-
-        $cornerNet = round(array_sum($netFooter), 2);
-
-        $columns = [];
-        foreach ($yearsAsc as $y) {
-            $columns[] = ['key' => $y, 'label' => (string) $y];
-        }
-
-        return [
-            'mode' => 'annual',
-            'year' => null,
-            'columns' => $columns,
-            'lines' => $lines,
-            'net_footer' => $netFooter,
-            'corner_net' => $cornerNet,
-            'pencil_year' => $yMax,
-            'data_tab' => 'annual',
-            'header_title' => 'Annual cash flow',
-            'header_metric_label' => 'Combined net (sum of year nets):',
-            'info_text' => 'Same layout as <strong>Monthly</strong>; columns are <strong>calendar years</strong> (oldest to newest). Recategorize uses the <strong>'.$yMax.'</strong> column by default (same line in other years is updated when you change entries there or recategorize per year on Monthly).',
-            'footer_row_label' => 'Net (year)',
-            'scroll_hint' => 'Scroll sideways to see all years →',
-            'empty_context' => '',
-            'year_total_net' => $cornerNet,
-            'net_by_month' => [],
-        ];
-    }
-
-    /**
-     * @param  list<array{type: string, subcategory_label: string, description_display: string}>  $lines
-     * @return list<array{type: string, subcategory_label: string, description_display: string}>
-     */
-    private function sortCashflowMatrixLines(array $lines): array
-    {
-        $typeOrder = array_keys(DailyCashEntry::$types);
-        usort($lines, function ($a, $b) use ($typeOrder) {
-            $ia = array_search($a['type'], $typeOrder, true);
-            $ib = array_search($b['type'], $typeOrder, true);
-            $ia = $ia === false ? 99 : $ia;
-            $ib = $ib === false ? 99 : $ib;
-            if ($ia !== $ib) {
-                return $ia <=> $ib;
-            }
-            $sc = strcmp((string) ($a['subcategory_label'] ?? ''), (string) ($b['subcategory_label'] ?? ''));
-            if ($sc !== 0) {
-                return $sc;
-            }
-
-            return strcmp((string) $a['description_display'], (string) $b['description_display']);
-        });
-
-        return $lines;
     }
 
     // Auto-redirect to today
@@ -469,19 +291,17 @@ class DailyCashController extends Controller
         return redirect()->route('daily-cash.show', $day);
     }
 
-    /** Workbook-style landing page (matches spreadsheet “Guide” tab). */
-    public function guide()
-    {
-        return view('daily-cash.guide');
-    }
-
     // Show a single day
     public function show(DailyCashDay $dailyCash)
     {
         $dailyCash->load('entries');
         $this->ledger->alignStaleZeroOpening($dailyCash);
         $dailyCash->refresh();
+        $this->ledger->ensureMetroSheetEntries($dailyCash);
+        $dailyCash->refresh();
         $dailyCash->load('entries');
+
+        $metroSheetRows = DailyCashMetroLedger::buildSheetRows($dailyCash);
 
         $prevWeekNav = $this->weekPrevNav($dailyCash);
         $nextWeekNav = $this->weekNextNav($dailyCash);
@@ -500,15 +320,19 @@ class DailyCashController extends Controller
             $cashEntryFormMeta['groups'][$t] = DailyCashflowCategories::categoryFormGroupsForType($t);
         }
 
+        $dailyCashWorksheetEntryMeta = DailyCashMetroLedger::worksheetEntryFormTree();
+
         return view('daily-cash.show', compact(
             'dailyCash',
+            'metroSheetRows',
             'prevWeekNav',
             'nextWeekNav',
             'weekStrip',
             'weekRangeLabel',
             'bankAccounts',
             'dayDeposits',
-            'cashEntryFormMeta'
+            'cashEntryFormMeta',
+            'dailyCashWorksheetEntryMeta'
         ));
     }
 
@@ -556,30 +380,14 @@ class DailyCashController extends Controller
     // Add an entry to a day
     public function storeEntry(Request $request, DailyCashDay $dailyCash)
     {
-        $request->validate([
-            'type' => ['required', 'string', Rule::in(array_merge(array_keys(DailyCashEntry::$types), ['CASH_FROM_BANK']))],
-            'description' => 'required|string|max:255',
-            'amount' => 'required|numeric|min:0.01',
-            'category_preset' => 'nullable|string|max:64',
-            'category_custom_piece' => 'nullable|string|max:120',
-            'subcategory_key' => 'nullable|string|max:64',
-        ]);
-
-        $isBank = $request->type === 'CASH_FROM_BANK';
-        $type = $isBank ? 'INCOME' : $request->type;
-
-        [$category, $subcategoryOverride] = DailyCashflowCategories::resolveCategoryAndSubcategoryForEntryRequest(
-            $request,
-            $type,
-            $isBank
-        );
+        $payload = $this->validatedDailyCashDayWorksheetStore($request);
 
         $max = $dailyCash->entries()->max('sort_order') ?? 0;
         $dailyCash->entries()->create([
-            'type' => $type,
-            'category' => $category,
-            'subcategory_override' => $subcategoryOverride,
-            'description' => strtoupper($request->description),
+            'type' => $payload['type'],
+            'category' => $payload['category'],
+            'subcategory_override' => $payload['subcategory_override'],
+            'description' => $payload['description'],
             'amount' => $request->amount,
             'sort_order' => $max + 1,
         ]);
@@ -593,35 +401,185 @@ class DailyCashController extends Controller
     public function updateEntry(Request $request, DailyCashDay $dailyCash, DailyCashEntry $entry)
     {
         abort_if($entry->daily_cash_day_id !== $dailyCash->id, 404);
-        $request->validate([
-            'type' => ['required', 'string', Rule::in(array_merge(array_keys(DailyCashEntry::$types), ['CASH_FROM_BANK']))],
-            'description' => 'required|string|max:255',
-            'amount' => 'required|numeric|min:0.01',
-            'category_preset' => 'nullable|string|max:64',
-            'category_custom_piece' => 'nullable|string|max:120',
-            'subcategory_key' => 'nullable|string|max:64',
-        ]);
 
-        $isBank = $request->type === 'CASH_FROM_BANK';
-        $type = $isBank ? 'INCOME' : $request->type;
+        if ($request->filled('worksheet_category_key')) {
+            $payload = $this->validatedDailyCashDayWorksheetUpdate($request);
+        } else {
+            $request->validate([
+                'type' => ['required', 'string', Rule::in(array_merge(array_keys(DailyCashEntry::$types), ['CASH_FROM_BANK']))],
+                'description' => 'required|string|max:255',
+                'amount' => 'required|numeric|min:0',
+                'category_preset' => 'nullable|string|max:64',
+                'category_custom_piece' => 'nullable|string|max:120',
+                'subcategory_key' => 'nullable|string|max:64',
+            ]);
 
-        [$category, $subcategoryOverride] = DailyCashflowCategories::resolveCategoryAndSubcategoryForEntryRequest(
-            $request,
-            $type,
-            $isBank
-        );
+            $isBank = $request->type === 'CASH_FROM_BANK';
+            $type = $isBank ? 'INCOME' : $request->type;
+
+            [$category, $subcategoryOverride] = DailyCashflowCategories::resolveCategoryAndSubcategoryForEntryRequest(
+                $request,
+                $type,
+                $isBank
+            );
+
+            $payload = [
+                'type' => $type,
+                'category' => $category,
+                'subcategory_override' => $subcategoryOverride,
+                'description' => strtoupper(trim((string) $request->description)),
+            ];
+        }
 
         $entry->update([
-            'type' => $type,
-            'category' => $category,
-            'description' => strtoupper($request->description),
+            'type' => $payload['type'],
+            'category' => $payload['category'],
+            'description' => $payload['description'],
             'amount' => $request->amount,
-            'subcategory_override' => $subcategoryOverride,
+            'subcategory_override' => $payload['subcategory_override'],
         ]);
 
         $this->ledger->syncOpeningBalancesForwardFrom($dailyCash);
 
         return back()->with('success', 'Entry updated. Later days in this period were synced to the new balances.');
+    }
+
+    /**
+     * Day view “Add entry”: worksheet drill-down (+ cash from bank). Stores metro category keys on entries.
+     *
+     * @return array{type: string, category: ?string, subcategory_override: ?string, description: string}
+     */
+    private function validatedDailyCashDayWorksheetStore(Request $request): array
+    {
+        $allowedTypes = ['CAPITAL', 'INCOME', 'EXPENSES', 'CASH_FROM_BANK'];
+
+        $request->validate([
+            'type' => ['required', 'string', Rule::in($allowedTypes)],
+            'amount' => 'required|numeric|min:0.01',
+            'worksheet_category_key' => 'nullable|string|max:64',
+            'description' => 'nullable|string|max:255',
+            'other_specify' => 'nullable|string|max:255',
+        ]);
+
+        $isBank = $request->type === 'CASH_FROM_BANK';
+        $type = $isBank ? 'INCOME' : (string) $request->type;
+
+        if ($isBank) {
+            $request->validate(['description' => 'required|string|max:255']);
+
+            return [
+                'type' => $type,
+                'category' => DailyCashflowCategories::CASH_FROM_BANK,
+                'subcategory_override' => null,
+                'description' => strtoupper(preg_replace('/\s+/', ' ', trim((string) $request->description))),
+            ];
+        }
+
+        $managed = DailyCashMetroLedger::managedCategoryKeys();
+        $key = (string) $request->input('worksheet_category_key', '');
+        if ($key === '' || ! in_array($key, $managed, true)) {
+            throw ValidationException::withMessages([
+                'worksheet_category_key' => ['Choose a worksheet line for this entry.'],
+            ]);
+        }
+
+        if (! DailyCashMetroLedger::worksheetCategoryMatchesType($key, $type)) {
+            throw ValidationException::withMessages([
+                'worksheet_category_key' => ['That line does not belong to the selected group.'],
+            ]);
+        }
+
+        if (DailyCashMetroLedger::isMetroOthersCategory($key)) {
+            $request->validate(['other_specify' => 'required|string|max:255']);
+
+            return [
+                'type' => $type,
+                'category' => $key,
+                'subcategory_override' => null,
+                'description' => strtoupper(preg_replace('/\s+/', ' ', trim((string) $request->other_specify))),
+            ];
+        }
+
+        return [
+            'type' => $type,
+            'category' => $key,
+            'subcategory_override' => null,
+            'description' => $this->normalizedWorksheetOptionalDescription($request),
+        ];
+    }
+
+    /**
+     * Day view “Edit entry” when submitted with worksheet fields (statement edits omit worksheet_category_key).
+     *
+     * @return array{type: string, category: ?string, subcategory_override: ?string, description: string}
+     */
+    private function validatedDailyCashDayWorksheetUpdate(Request $request): array
+    {
+        $allowedTypes = ['CAPITAL', 'INCOME', 'EXPENSES', 'CASH_FROM_BANK'];
+
+        $request->validate([
+            'type' => ['required', 'string', Rule::in($allowedTypes)],
+            'amount' => 'required|numeric|min:0',
+            'worksheet_category_key' => 'nullable|string|max:64',
+            'description' => 'nullable|string|max:255',
+            'other_specify' => 'nullable|string|max:255',
+        ]);
+
+        $isBank = $request->type === 'CASH_FROM_BANK';
+        $type = $isBank ? 'INCOME' : (string) $request->type;
+
+        if ($isBank) {
+            $request->validate(['description' => 'required|string|max:255']);
+
+            return [
+                'type' => $type,
+                'category' => DailyCashflowCategories::CASH_FROM_BANK,
+                'subcategory_override' => null,
+                'description' => strtoupper(preg_replace('/\s+/', ' ', trim((string) $request->description))),
+            ];
+        }
+
+        $request->validate(['worksheet_category_key' => 'required|string|max:64']);
+
+        $managed = DailyCashMetroLedger::managedCategoryKeys();
+        $key = (string) $request->input('worksheet_category_key', '');
+        if (! in_array($key, $managed, true)) {
+            throw ValidationException::withMessages([
+                'worksheet_category_key' => ['Choose a worksheet line for this entry.'],
+            ]);
+        }
+
+        if (! DailyCashMetroLedger::worksheetCategoryMatchesType($key, $type)) {
+            throw ValidationException::withMessages([
+                'worksheet_category_key' => ['That line does not belong to the selected group.'],
+            ]);
+        }
+
+        if (DailyCashMetroLedger::isMetroOthersCategory($key)) {
+            $request->validate(['other_specify' => 'required|string|max:255']);
+
+            return [
+                'type' => $type,
+                'category' => $key,
+                'subcategory_override' => null,
+                'description' => strtoupper(preg_replace('/\s+/', ' ', trim((string) $request->other_specify))),
+            ];
+        }
+
+        return [
+            'type' => $type,
+            'category' => $key,
+            'subcategory_override' => null,
+            'description' => $this->normalizedWorksheetOptionalDescription($request),
+        ];
+    }
+
+    /** Uppercase worksheet “free” description; empty when omitted (non–Cash-from-Bank, non-Others lines). */
+    private function normalizedWorksheetOptionalDescription(Request $request): string
+    {
+        $raw = trim((string) $request->input('description', ''));
+
+        return $raw === '' ? '' : strtoupper(preg_replace('/\s+/', ' ', $raw));
     }
 
     // Delete an entry

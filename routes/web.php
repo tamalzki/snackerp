@@ -86,7 +86,6 @@ Route::middleware(['auth'])->group(function () {
     Route::get('daily-cash/open/{date}', [DailyCashController::class, 'openDate'])
         ->where('date', '[0-9]{4}-[0-9]{2}-[0-9]{2}')
         ->name('daily-cash.open-date');
-    Route::get('daily-cash/guide', [DailyCashController::class, 'guide'])->name('daily-cash.guide');
     Route::get('daily-cash/statements/income', [DailyCashStatementController::class, 'income'])->name('daily-cash.statements.income');
     Route::get('daily-cash/statements/expenses', [DailyCashStatementController::class, 'expenses'])->name('daily-cash.statements.expenses');
     Route::get('daily-cash/statements/discretionary', [DailyCashStatementController::class, 'discretionary'])->name('daily-cash.statements.discretionary');

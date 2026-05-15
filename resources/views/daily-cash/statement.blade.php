@@ -197,11 +197,11 @@
                         </div>
                         <div class="col-12 d-none" id="stmtCustomCategoryWrap">
                             <label class="form-label small fw-bold">Custom category name</label>
-                            <input type="text" name="category_custom_piece" class="form-control form-control-sm" placeholder="e.g. SIDE BUSINESS">
+                            <input type="text" name="category_custom_piece" class="form-control form-control-sm">
                         </div>
                         <div class="col-12">
                             <label class="form-label small fw-bold">Description</label>
-                            <input type="text" name="description" class="form-control form-control-sm" required placeholder="Note / payee">
+                            <input type="text" name="description" class="form-control form-control-sm" required>
                         </div>
                         <div class="col-12">
                             <label class="form-label small fw-bold">Amount (₱)</label>
@@ -280,7 +280,7 @@
                         </div>
                         <div class="col-12 d-none" id="stmtEditCustomCategoryWrap">
                             <label class="form-label small fw-bold">Custom category name</label>
-                            <input type="text" name="category_custom_piece" id="stmtEditCategoryCustomPiece" class="form-control form-control-sm" placeholder="e.g. SIDE BUSINESS">
+                            <input type="text" name="category_custom_piece" id="stmtEditCategoryCustomPiece" class="form-control form-control-sm">
                         </div>
                         <div class="col-12">
                             <label class="form-label small fw-bold">Description</label>

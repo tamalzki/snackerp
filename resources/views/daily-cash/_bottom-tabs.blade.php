@@ -7,8 +7,6 @@
     $annualTabActive = request()->routeIs('daily-cash.index') && $indexTab === 'annual';
 @endphp
 <nav class="cashflow-bottom-tabs" aria-label="Cashflow workbook tabs">
-    <a href="{{ route('daily-cash.guide') }}"
-       class="cashflow-tab cashflow-tab--guide {{ request()->routeIs('daily-cash.guide') ? 'active' : '' }}">Guide</a>
     <a href="{{ route('daily-cash.today') }}"
        class="cashflow-tab cashflow-tab--daily {{ $dailyTabActive ? 'active' : '' }}">Daily cash flow</a>
     <a href="{{ route('daily-cash.index', ['tab' => 'monthly', 'year' => $cfYear]) }}"

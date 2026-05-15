@@ -312,7 +312,6 @@
         outline: 2px solid rgba(15, 23, 42, 0.35);
         outline-offset: -1px;
     }
-    .cashflow-tab--guide { background: #fde047; }
     .cashflow-tab--daily { background: #f9a8d4; color: #4a044e !important; }
     .cashflow-tab--monthly { background: #93c5fd; }
     .cashflow-tab--annual { background: #86efac; }
