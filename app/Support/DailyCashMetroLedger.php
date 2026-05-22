@@ -44,10 +44,16 @@ final class DailyCashMetroLedger
         return in_array($category, self::managedCategoryKeys(), true);
     }
 
-    /** Income “Others” or any expense line whose key ends with `_others`. */
+    /** Stored {@see DailyCashEntry::$category} for discretionary “Others” on the worksheet. */
+    public const DISCRETIONARY_METRO_OTHERS_CATEGORY = 'metro_discretionary_others';
+
+    /** Income “Others” or any expense / other line whose key ends with `_others` (not discretionary). */
     public static function isMetroOthersCategory(?string $categoryKey): bool
     {
         if ($categoryKey === null || $categoryKey === '') {
+            return false;
+        }
+        if ($categoryKey === self::DISCRETIONARY_METRO_OTHERS_CATEGORY) {
             return false;
         }
         if ($categoryKey === 'metro_income_others') {
@@ -55,6 +61,32 @@ final class DailyCashMetroLedger
         }
 
         return str_ends_with($categoryKey, '_others');
+    }
+
+    /** “Specify…” field for worksheet Add/Edit (includes discretionary Others). */
+    public static function worksheetNeedsSpecifyOtherField(?string $categoryKey): bool
+    {
+        if ($categoryKey === null || $categoryKey === '') {
+            return false;
+        }
+        if ($categoryKey === self::DISCRETIONARY_METRO_OTHERS_CATEGORY) {
+            return true;
+        }
+
+        return self::isMetroOthersCategory($categoryKey);
+    }
+
+    /** Use aggregated worksheet label (“Other — …”) for pooled Others lines + discretionary Others. */
+    public static function worksheetUsesOthersAggregateLabel(?string $categoryKey): bool
+    {
+        if ($categoryKey === null || $categoryKey === '') {
+            return false;
+        }
+        if ($categoryKey === self::DISCRETIONARY_METRO_OTHERS_CATEGORY) {
+            return true;
+        }
+
+        return self::isMetroOthersCategory($categoryKey);
     }
 
     public static function worksheetCategoryMatchesType(?string $categoryKey, string $ledgerType): bool
@@ -83,6 +115,9 @@ final class DailyCashMetroLedger
         $capitalLines = [];
         $incomeBuckets = [];
         $expenseBuckets = [];
+        $discretionaryBuckets = [];
+        $savingsBuckets = [];
+        $otherBuckets = [];
         $currentHeading = '';
 
         foreach (self::sheetDefinition() as $row) {
@@ -98,7 +133,7 @@ final class DailyCashMetroLedger
             $type = (string) $row['type'];
             $key = (string) $row['category_key'];
             $label = (string) ($row['category_display'] ?? $row['label'] ?? $key);
-            $needsOther = self::isMetroOthersCategory($key);
+            $needsOther = self::worksheetNeedsSpecifyOtherField($key);
             $line = ['key' => $key, 'label' => $label, 'needsOther' => $needsOther];
 
             if ($type === 'CAPITAL') {
@@ -117,6 +152,27 @@ final class DailyCashMetroLedger
                 } else {
                     $expenseBuckets[$n - 1]['lines'][] = $line;
                 }
+            } elseif ($type === 'DISCRETIONARY') {
+                $n = count($discretionaryBuckets);
+                if ($n === 0 || ($discretionaryBuckets[$n - 1]['heading'] ?? '') !== $currentHeading) {
+                    $discretionaryBuckets[] = ['heading' => $currentHeading !== '' ? $currentHeading : 'Discretionary', 'lines' => [$line]];
+                } else {
+                    $discretionaryBuckets[$n - 1]['lines'][] = $line;
+                }
+            } elseif ($type === 'SAVINGS') {
+                $n = count($savingsBuckets);
+                if ($n === 0 || ($savingsBuckets[$n - 1]['heading'] ?? '') !== $currentHeading) {
+                    $savingsBuckets[] = ['heading' => $currentHeading !== '' ? $currentHeading : 'Savings', 'lines' => [$line]];
+                } else {
+                    $savingsBuckets[$n - 1]['lines'][] = $line;
+                }
+            } elseif ($type === 'OTHER') {
+                $n = count($otherBuckets);
+                if ($n === 0 || ($otherBuckets[$n - 1]['heading'] ?? '') !== $currentHeading) {
+                    $otherBuckets[] = ['heading' => $currentHeading !== '' ? $currentHeading : 'Other', 'lines' => [$line]];
+                } else {
+                    $otherBuckets[$n - 1]['lines'][] = $line;
+                }
             }
         }
 
@@ -125,6 +181,9 @@ final class DailyCashMetroLedger
             'capital' => ['type' => 'CAPITAL', 'lines' => $capitalLines],
             'income' => ['type' => 'INCOME', 'buckets' => $incomeBuckets],
             'expense' => ['type' => 'EXPENSES', 'buckets' => $expenseBuckets],
+            'discretionary' => ['type' => 'DISCRETIONARY', 'buckets' => $discretionaryBuckets],
+            'savings' => ['type' => 'SAVINGS', 'buckets' => $savingsBuckets],
+            'other' => ['type' => 'OTHER', 'buckets' => $otherBuckets],
         ];
     }
 
@@ -208,7 +267,7 @@ final class DailyCashMetroLedger
                 return abs((float) $e->amount) > 0.005;
             }) ?? $matches->first();
 
-            $displayLabel = self::isMetroOthersCategory($categoryKey)
+            $displayLabel = self::worksheetUsesOthersAggregateLabel($categoryKey)
                 ? self::aggregatedOthersCategoryLabel($categoryDisplay, $matches)
                 : $categoryDisplay;
 
@@ -270,7 +329,7 @@ final class DailyCashMetroLedger
 
             $amount = round((float) $monthMatches->sum('amount'), 2);
 
-            $displayLabel = self::isMetroOthersCategory($categoryKey)
+            $displayLabel = self::worksheetUsesOthersAggregateLabel($categoryKey)
                 ? self::aggregatedOthersCategoryLabel($categoryDisplayBase, $monthMatches)
                 : $categoryDisplayBase;
 
@@ -357,7 +416,7 @@ final class DailyCashMetroLedger
 
             $yearMatches = self::filterEntriesForSheetLine($entries, $year, null, $type, $categoryKey);
 
-            $displayLabel = self::isMetroOthersCategory($categoryKey)
+            $displayLabel = self::worksheetUsesOthersAggregateLabel($categoryKey)
                 ? self::aggregatedOthersCategoryLabel($categoryDisplayBase, $yearMatches)
                 : $categoryDisplayBase;
 

@@ -443,6 +443,9 @@
                                 <option value="CAPITAL">Capital</option>
                                 <option value="INCOME">Income</option>
                                 <option value="EXPENSES">Expenses</option>
+                                <option value="DISCRETIONARY">Discretionary</option>
+                                <option value="SAVINGS">Savings</option>
+                                <option value="OTHER">Other</option>
                             </select>
                             <div class="form-text small">Matches the daily worksheet. Use <strong>Deposit to Bank</strong> (below the summary) when cash leaves the till for the bank.</div>
                         </div>
@@ -459,6 +462,15 @@
                             <input type="text" name="other_specify" id="addEntryOtherSpecify" class="form-control form-control-sm"
                                    maxlength="255">
                             <div class="form-text small">Shows on the worksheet as <strong>Other - …</strong> with this text.</div>
+                        </div>
+                        <div class="col-12 d-none" id="addEntryDiscSubWrap">
+                            <label class="form-label small fw-bold">Optional sub-category</label>
+                            <select id="addEntryDiscSubcategory" class="form-select form-select-sm">
+                                @foreach(\App\Support\CashflowSubcategoryClassifier::designatedEditOptionsForType('DISCRETIONARY') as $discOpt)
+                                <option value="{{ $discOpt['key'] }}">{{ $discOpt['label'] }}</option>
+                                @endforeach
+                            </select>
+                            <div class="form-text small text-muted">For reporting tags (e.g. Dining out vs Travel). Ledger line stays “Discretionary — Others”; memo is below.</div>
                         </div>
                         <div class="col-12 d-none" id="addEntryDescWrap">
                             <label class="form-label small fw-bold">Description <span id="addEntryDescRequiredStar" class="text-danger d-none">*</span></label>
@@ -608,6 +620,15 @@
                                 <label class="form-label small fw-bold">Specify “Other” <span class="text-danger">*</span></label>
                                 <input type="text" name="other_specify" id="editEntryOtherSpecify" class="form-control form-control-sm" maxlength="255">
                             </div>
+                            <div class="mt-2 d-none" id="editEntryDiscSubWrap">
+                                <label class="form-label small fw-bold">Optional sub-category</label>
+                                <select id="editEntryDiscSubcategory" class="form-select form-select-sm">
+                                    @foreach(\App\Support\CashflowSubcategoryClassifier::designatedEditOptionsForType('DISCRETIONARY') as $discOpt)
+                                    <option value="{{ $discOpt['key'] }}">{{ $discOpt['label'] }}</option>
+                                    @endforeach
+                                </select>
+                                <div class="form-text small text-muted">Reporting tag only; worksheet line is discretionary “Others”.</div>
+                            </div>
                             <div class="mt-2 d-none" id="editEntryDescWrap">
                                 <label class="form-label small fw-bold">Description <span id="editEntryDescRequiredStar" class="text-danger d-none">*</span></label>
                                 <input type="text" name="description" id="editWsDesc" class="form-control form-control-sm" maxlength="255">
@@ -695,6 +716,11 @@
 <script>
 window.cashEntryFormMeta = @json($__dcfCashEntryMeta);
 window.dailyCashWorksheetEntryMeta = @json($__dcfWorksheetMeta);
+window.dailyCashDiscretionaryMetroOthersCategory = @json(\App\Support\DailyCashMetroLedger::DISCRETIONARY_METRO_OTHERS_CATEGORY);
+
+function dailyCashDiscretionaryMetroOthersCategoryKey() {
+    return window.dailyCashDiscretionaryMetroOthersCategory || 'metro_discretionary_others';
+}
 
 window.__dailyCashEditLegacyMode = false;
 
@@ -732,15 +758,16 @@ function dailyCashAppendLineOption(sel, line) {
     sel.appendChild(o);
 }
 
-function dailyCashFillIncomeLineSelect(sel, meta) {
+/** @param buckets list of { heading, lines } from worksheet meta */
+function dailyCashFillLineBucketsSelect(sel, buckets) {
     sel.innerHTML = '';
     const ph = document.createElement('option');
     ph.value = '';
-    ph.textContent = '— Choose income line —';
+    ph.textContent = '— Choose line —';
     sel.appendChild(ph);
-    const buckets = (meta.income && meta.income.buckets) ? meta.income.buckets : [];
-    for (let i = 0; i < buckets.length; i++) {
-        const b = buckets[i];
+    const list = buckets || [];
+    for (let i = 0; i < list.length; i++) {
+        const b = list[i];
         const og = document.createElement('optgroup');
         og.label = b.heading || ('Group ' + (i + 1));
         const lines = b.lines || [];
@@ -781,6 +808,28 @@ function dailyCashFillExpenseLinesFromBucket(lineSel, meta, bucketIdx) {
     }
 }
 
+function dailyCashSetAddEntryLineLabel(grp) {
+    const lbl = document.getElementById('addEntryLineLabel');
+    if (!lbl) return;
+    if (grp === 'DISCRETIONARY') lbl.textContent = 'Subcategory';
+    else if (grp === 'INCOME') lbl.textContent = 'Income line';
+    else if (grp === 'EXPENSES') lbl.textContent = 'Expense line';
+    else if (grp === 'SAVINGS') lbl.textContent = 'Savings line';
+    else if (grp === 'OTHER') lbl.textContent = 'Other line';
+    else lbl.textContent = 'Category line';
+}
+
+function dailyCashSetEditEntryLineLabel(grp) {
+    const lbl = document.getElementById('editEntryLineLabel');
+    if (!lbl) return;
+    if (grp === 'DISCRETIONARY') lbl.textContent = 'Subcategory';
+    else if (grp === 'INCOME') lbl.textContent = 'Income line';
+    else if (grp === 'EXPENSES') lbl.textContent = 'Expense line';
+    else if (grp === 'SAVINGS') lbl.textContent = 'Savings line';
+    else if (grp === 'OTHER') lbl.textContent = 'Other line';
+    else lbl.textContent = 'Category line';
+}
+
 function dailyCashSyncAddOtherDescVisibility() {
     const lineSel = document.getElementById('addEntryLineSelect');
     const keyHidden = document.getElementById('addEntryWorksheetCategoryKey');
@@ -789,6 +838,8 @@ function dailyCashSyncAddOtherDescVisibility() {
     const otherIn = document.getElementById('addEntryOtherSpecify');
     const descIn = document.getElementById('addEntryDescription');
     const grp = document.getElementById('addEntryGroup').value;
+
+    dailyCashSetAddEntryLineLabel(grp);
 
     if (grp === 'CASH_FROM_BANK' || grp === '' || grp === 'CAPITAL') {
         return;
@@ -803,8 +854,24 @@ function dailyCashSyncAddOtherDescVisibility() {
     otherIn.disabled = !needsOther;
     descIn.disabled = needsOther;
     otherIn.required = needsOther;
-    descIn.required = false;
-    dailyCashSetAddDescriptionRequireStar(false);
+    descIn.required = needsOther ? false : (grp === 'DISCRETIONARY');
+    dailyCashSetAddDescriptionRequireStar(needsOther ? false : (grp === 'DISCRETIONARY'));
+
+    const discWrap = document.getElementById('addEntryDiscSubWrap');
+    const discSel = document.getElementById('addEntryDiscSubcategory');
+    const isDiscOther = grp === 'DISCRETIONARY' && needsOther;
+    if (discWrap) {
+        discWrap.classList.toggle('d-none', !isDiscOther);
+    }
+    if (discSel) {
+        discSel.disabled = !isDiscOther;
+        discSel.removeAttribute('name');
+        if (isDiscOther) {
+            discSel.setAttribute('name', 'subcategory_key');
+        } else {
+            discSel.value = '';
+        }
+    }
 }
 
 function dailyCashSyncAddEntryForm(options) {
@@ -822,16 +889,24 @@ function dailyCashSyncAddEntryForm(options) {
     const descWrap = document.getElementById('addEntryDescWrap');
     const otherIn = document.getElementById('addEntryOtherSpecify');
     const descIn = document.getElementById('addEntryDescription');
+    const discSubWrapEl = document.getElementById('addEntryDiscSubWrap');
+    const discSelReset = document.getElementById('addEntryDiscSubcategory');
 
     typeHidden.value = grp === 'CASH_FROM_BANK' ? 'CASH_FROM_BANK' : grp;
     keyHidden.value = '';
     expWrap.classList.add('d-none');
     lineWrap.classList.add('d-none');
     otherWrap.classList.add('d-none');
+    if (discSubWrapEl) discSubWrapEl.classList.add('d-none');
     descWrap.classList.add('d-none');
     if (resetInputs) {
         otherIn.value = '';
         descIn.value = '';
+    }
+    if (discSelReset) {
+        discSelReset.value = '';
+        discSelReset.disabled = true;
+        discSelReset.removeAttribute('name');
     }
     otherIn.disabled = true;
     descIn.disabled = true;
@@ -859,7 +934,19 @@ function dailyCashSyncAddEntryForm(options) {
 
     if (grp === 'INCOME') {
         lineWrap.classList.remove('d-none');
-        dailyCashFillIncomeLineSelect(lineSel, meta);
+        dailyCashFillLineBucketsSelect(lineSel, (meta.income && meta.income.buckets) ? meta.income.buckets : []);
+        dailyCashSyncAddOtherDescVisibility();
+        return;
+    }
+
+    if (grp === 'DISCRETIONARY' || grp === 'SAVINGS' || grp === 'OTHER') {
+        lineWrap.classList.remove('d-none');
+        const buckets = grp === 'DISCRETIONARY'
+            ? (meta.discretionary && meta.discretionary.buckets)
+            : grp === 'SAVINGS'
+                ? (meta.savings && meta.savings.buckets)
+                : (meta.other && meta.other.buckets);
+        dailyCashFillLineBucketsSelect(lineSel, buckets || []);
         dailyCashSyncAddOtherDescVisibility();
         return;
     }
@@ -892,6 +979,18 @@ function dailyCashAddEntrySubmit() {
             return false;
         }
     }
+    if (grp === 'DISCRETIONARY') {
+        const lineSel = document.getElementById('addEntryLineSelect');
+        const opt = lineSel.options[lineSel.selectedIndex];
+        const needsOther = opt && opt.dataset.needsOther === '1';
+        const descEl = document.getElementById('addEntryDescription');
+        const otherEl = document.getElementById('addEntryOtherSpecify');
+        const text = needsOther ? (otherEl.value || '').trim() : (descEl.value || '').trim();
+        if (!text) {
+            window.alert('Enter a description for this discretionary entry.');
+            return false;
+        }
+    }
     return true;
 }
 
@@ -911,6 +1010,9 @@ function dailyCashFillEditGroupSelect(sel) {
         ['CAPITAL', 'Capital'],
         ['INCOME', 'Income'],
         ['EXPENSES', 'Expenses'],
+        ['DISCRETIONARY', 'Discretionary'],
+        ['SAVINGS', 'Savings'],
+        ['OTHER', 'Other'],
     ];
     for (let i = 0; i < opts.length; i++) {
         const o = document.createElement('option');
@@ -929,6 +1031,8 @@ function dailyCashSyncEditOtherDescVisibility() {
     const otherIn = document.getElementById('editEntryOtherSpecify');
     const descIn = document.getElementById('editWsDesc');
 
+    dailyCashSetEditEntryLineLabel(grp);
+
     if (grp === 'CASH_FROM_BANK' || grp === '' || grp === 'CAPITAL') {
         return;
     }
@@ -942,8 +1046,22 @@ function dailyCashSyncEditOtherDescVisibility() {
     otherIn.disabled = !needsOther;
     descIn.disabled = needsOther;
     otherIn.required = needsOther;
-    descIn.required = false;
-    dailyCashSetEditDescriptionRequireStar(false);
+    descIn.required = needsOther ? false : (grp === 'DISCRETIONARY');
+    dailyCashSetEditDescriptionRequireStar(needsOther ? false : (grp === 'DISCRETIONARY'));
+
+    const discWrap = document.getElementById('editEntryDiscSubWrap');
+    const discSel = document.getElementById('editEntryDiscSubcategory');
+    const isDiscOther = grp === 'DISCRETIONARY' && needsOther;
+    if (discWrap) {
+        discWrap.classList.toggle('d-none', !isDiscOther);
+    }
+    if (discSel) {
+        discSel.disabled = !isDiscOther;
+        discSel.removeAttribute('name');
+        if (isDiscOther) {
+            discSel.setAttribute('name', 'subcategory_key');
+        }
+    }
 }
 
 function dailyCashSyncEditWorksheetForm(options) {
@@ -961,16 +1079,24 @@ function dailyCashSyncEditWorksheetForm(options) {
     const descWrap = document.getElementById('editEntryDescWrap');
     const otherIn = document.getElementById('editEntryOtherSpecify');
     const descIn = document.getElementById('editWsDesc');
+    const discSubWrapEdit = document.getElementById('editEntryDiscSubWrap');
+    const discSelResetEd = document.getElementById('editEntryDiscSubcategory');
 
     typeHidden.value = grp === 'CASH_FROM_BANK' ? 'CASH_FROM_BANK' : grp;
     keyHidden.value = '';
     expWrap.classList.add('d-none');
     lineWrap.classList.add('d-none');
     otherWrap.classList.add('d-none');
+    if (discSubWrapEdit) discSubWrapEdit.classList.add('d-none');
     descWrap.classList.add('d-none');
     if (resetInputs) {
         otherIn.value = '';
         descIn.value = '';
+    }
+    if (discSelResetEd) {
+        discSelResetEd.value = '';
+        discSelResetEd.disabled = true;
+        discSelResetEd.removeAttribute('name');
     }
     otherIn.disabled = true;
     descIn.disabled = true;
@@ -998,7 +1124,19 @@ function dailyCashSyncEditWorksheetForm(options) {
 
     if (grp === 'INCOME') {
         lineWrap.classList.remove('d-none');
-        dailyCashFillIncomeLineSelect(lineSel, meta);
+        dailyCashFillLineBucketsSelect(lineSel, (meta.income && meta.income.buckets) ? meta.income.buckets : []);
+        dailyCashSyncEditOtherDescVisibility();
+        return;
+    }
+
+    if (grp === 'DISCRETIONARY' || grp === 'SAVINGS' || grp === 'OTHER') {
+        lineWrap.classList.remove('d-none');
+        const buckets = grp === 'DISCRETIONARY'
+            ? (meta.discretionary && meta.discretionary.buckets)
+            : grp === 'SAVINGS'
+                ? (meta.savings && meta.savings.buckets)
+                : (meta.other && meta.other.buckets);
+        dailyCashFillLineBucketsSelect(lineSel, buckets || []);
         dailyCashSyncEditOtherDescVisibility();
         return;
     }
@@ -1017,7 +1155,8 @@ function dailyCashSyncEditWorksheetForm(options) {
     }
 }
 
-function dailyCashPrefillEditWorksheet(isBank, ledgerType, categoryKey, description, amount) {
+function dailyCashPrefillEditWorksheet(isBank, ledgerType, categoryKey, description, amount, storedDiscSub) {
+    storedDiscSub = (typeof storedDiscSub === 'undefined' || storedDiscSub === null) ? '' : storedDiscSub;
     const meta = window.dailyCashWorksheetEntryMeta || {};
     const wsPane = document.getElementById('editEntryWorksheetPane');
     dailyCashSetPaneInputsDisabled(wsPane, false);
@@ -1060,7 +1199,7 @@ function dailyCashPrefillEditWorksheet(isBank, ledgerType, categoryKey, descript
         dailyCashSyncEditWorksheetForm({ resetInputs: false });
         lineSel.value = key;
         if (lineSel.value !== key) {
-            dailyCashFillIncomeLineSelect(lineSel, meta);
+            dailyCashFillLineBucketsSelect(lineSel, (meta.income && meta.income.buckets) ? meta.income.buckets : []);
             lineSel.value = key;
         }
         dailyCashSyncEditOtherDescVisibility();
@@ -1068,6 +1207,45 @@ function dailyCashPrefillEditWorksheet(isBank, ledgerType, categoryKey, descript
         const needsOther = opt && opt.dataset.needsOther === '1';
         if (needsOther) otherIn.value = description;
         else descIn.value = description;
+        return;
+    }
+
+    if (ledgerType === 'DISCRETIONARY' || ledgerType === 'SAVINGS' || ledgerType === 'OTHER') {
+        const grpVal = ledgerType;
+        grp.value = grpVal;
+        dailyCashSyncEditWorksheetForm({ resetInputs: false });
+        const buckets =
+            grpVal === 'DISCRETIONARY'
+                ? (meta.discretionary && meta.discretionary.buckets)
+                : grpVal === 'SAVINGS'
+                    ? (meta.savings && meta.savings.buckets)
+                    : (meta.other && meta.other.buckets);
+        dailyCashFillLineBucketsSelect(lineSel, buckets || []);
+        lineSel.value = key;
+        if (lineSel.value !== key) {
+            dailyCashFillLineBucketsSelect(lineSel, buckets || []);
+            lineSel.value = key;
+        }
+        dailyCashSyncEditOtherDescVisibility();
+        const opt = lineSel.options[lineSel.selectedIndex];
+        const needsOther = opt && opt.dataset.needsOther === '1';
+        if (needsOther) otherIn.value = description;
+        else descIn.value = description;
+
+        const dk = dailyCashDiscretionaryMetroOthersCategoryKey();
+        const dsel = document.getElementById('editEntryDiscSubcategory');
+        if (ledgerType === 'DISCRETIONARY' && dsel) {
+            if (key === dk) {
+                let sk = (storedDiscSub != null && storedDiscSub !== '') ? String(storedDiscSub) : '';
+                if (sk === 'auto') sk = '';
+                dsel.value = sk;
+                if (!Array.from(dsel.options).some(function (o) { return o.value === dsel.value; })) {
+                    dsel.value = '';
+                }
+            } else {
+                dsel.value = '';
+            }
+        }
         return;
     }
 
@@ -1188,7 +1366,7 @@ function editEntry(id, type, description, amount, category, subKey) {
         dailyCashSetPaneInputsDisabled(wsPane, false);
         dailyCashSetPaneInputsDisabled(legPane, true);
         dailyCashFillEditGroupSelect(document.getElementById('editEntryGroup'));
-        dailyCashPrefillEditWorksheet(formBank, type, worksheetKey, description, amount);
+        dailyCashPrefillEditWorksheet(formBank, type, worksheetKey, description, amount, subKey);
     } else {
         window.__dailyCashEditLegacyMode = true;
         wsPane.classList.add('d-none');
@@ -1261,6 +1439,18 @@ function dailyCashEditEntrySubmit() {
             dailyCashSyncEditOtherDescVisibility();
             if (!document.getElementById('editEntryWorksheetCategoryKey').value) {
                 window.alert('Choose a worksheet line.');
+                return false;
+            }
+        }
+        if (grp === 'DISCRETIONARY') {
+            const lineSel = document.getElementById('editEntryLineSelect');
+            const opt = lineSel.options[lineSel.selectedIndex];
+            const needsOther = opt && opt.dataset.needsOther === '1';
+            const descEl = document.getElementById('editWsDesc');
+            const otherEl = document.getElementById('editEntryOtherSpecify');
+            const text = needsOther ? (otherEl.value || '').trim() : (descEl.value || '').trim();
+            if (!text) {
+                window.alert('Enter a description for this discretionary entry.');
                 return false;
             }
         }

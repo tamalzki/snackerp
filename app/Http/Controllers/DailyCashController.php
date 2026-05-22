@@ -394,7 +394,8 @@ class DailyCashController extends Controller
 
         $this->ledger->syncOpeningBalancesForwardFrom($dailyCash);
 
-        return back()->with('success', 'Entry added. Later days in this period were synced to the new balances.');
+        return redirect()->route('daily-cash.show', $dailyCash)
+            ->with('success', 'Entry added. Later days in this period were synced to the new balances.');
     }
 
     // Update an entry
@@ -441,7 +442,8 @@ class DailyCashController extends Controller
 
         $this->ledger->syncOpeningBalancesForwardFrom($dailyCash);
 
-        return back()->with('success', 'Entry updated. Later days in this period were synced to the new balances.');
+        return redirect()->route('daily-cash.show', $dailyCash)
+            ->with('success', 'Entry updated. Later days in this period were synced to the new balances.');
     }
 
     /**
@@ -451,7 +453,7 @@ class DailyCashController extends Controller
      */
     private function validatedDailyCashDayWorksheetStore(Request $request): array
     {
-        $allowedTypes = ['CAPITAL', 'INCOME', 'EXPENSES', 'CASH_FROM_BANK'];
+        $allowedTypes = ['CAPITAL', 'INCOME', 'EXPENSES', 'DISCRETIONARY', 'SAVINGS', 'OTHER', 'CASH_FROM_BANK'];
 
         $request->validate([
             'type' => ['required', 'string', Rule::in($allowedTypes)],
@@ -459,6 +461,7 @@ class DailyCashController extends Controller
             'worksheet_category_key' => 'nullable|string|max:64',
             'description' => 'nullable|string|max:255',
             'other_specify' => 'nullable|string|max:255',
+            'subcategory_key' => 'nullable|string|max:64',
         ]);
 
         $isBank = $request->type === 'CASH_FROM_BANK';
@@ -489,6 +492,17 @@ class DailyCashController extends Controller
             ]);
         }
 
+        if ($key === DailyCashMetroLedger::DISCRETIONARY_METRO_OTHERS_CATEGORY) {
+            $request->validate(['other_specify' => 'required|string|max:255']);
+
+            return [
+                'type' => 'DISCRETIONARY',
+                'category' => DailyCashMetroLedger::DISCRETIONARY_METRO_OTHERS_CATEGORY,
+                'subcategory_override' => $this->worksheetDiscretionaryMetroOthersSubcategoryOverride($request),
+                'description' => strtoupper(preg_replace('/\s+/', ' ', trim((string) $request->other_specify))),
+            ];
+        }
+
         if (DailyCashMetroLedger::isMetroOthersCategory($key)) {
             $request->validate(['other_specify' => 'required|string|max:255']);
 
@@ -497,6 +511,22 @@ class DailyCashController extends Controller
                 'category' => $key,
                 'subcategory_override' => null,
                 'description' => strtoupper(preg_replace('/\s+/', ' ', trim((string) $request->other_specify))),
+            ];
+        }
+
+        if ($type === 'DISCRETIONARY' && $key !== DailyCashMetroLedger::DISCRETIONARY_METRO_OTHERS_CATEGORY) {
+            $rawDesc = trim((string) $request->input('description', ''));
+            if ($rawDesc === '') {
+                throw ValidationException::withMessages([
+                    'description' => ['Description is required for discretionary entries.'],
+                ]);
+            }
+
+            return [
+                'type' => $type,
+                'category' => $key,
+                'subcategory_override' => null,
+                'description' => strtoupper(preg_replace('/\s+/', ' ', $rawDesc)),
             ];
         }
 
@@ -515,7 +545,7 @@ class DailyCashController extends Controller
      */
     private function validatedDailyCashDayWorksheetUpdate(Request $request): array
     {
-        $allowedTypes = ['CAPITAL', 'INCOME', 'EXPENSES', 'CASH_FROM_BANK'];
+        $allowedTypes = ['CAPITAL', 'INCOME', 'EXPENSES', 'DISCRETIONARY', 'SAVINGS', 'OTHER', 'CASH_FROM_BANK'];
 
         $request->validate([
             'type' => ['required', 'string', Rule::in($allowedTypes)],
@@ -523,6 +553,7 @@ class DailyCashController extends Controller
             'worksheet_category_key' => 'nullable|string|max:64',
             'description' => 'nullable|string|max:255',
             'other_specify' => 'nullable|string|max:255',
+            'subcategory_key' => 'nullable|string|max:64',
         ]);
 
         $isBank = $request->type === 'CASH_FROM_BANK';
@@ -555,6 +586,17 @@ class DailyCashController extends Controller
             ]);
         }
 
+        if ($key === DailyCashMetroLedger::DISCRETIONARY_METRO_OTHERS_CATEGORY) {
+            $request->validate(['other_specify' => 'required|string|max:255']);
+
+            return [
+                'type' => 'DISCRETIONARY',
+                'category' => DailyCashMetroLedger::DISCRETIONARY_METRO_OTHERS_CATEGORY,
+                'subcategory_override' => $this->worksheetDiscretionaryMetroOthersSubcategoryOverride($request),
+                'description' => strtoupper(preg_replace('/\s+/', ' ', trim((string) $request->other_specify))),
+            ];
+        }
+
         if (DailyCashMetroLedger::isMetroOthersCategory($key)) {
             $request->validate(['other_specify' => 'required|string|max:255']);
 
@@ -566,12 +608,37 @@ class DailyCashController extends Controller
             ];
         }
 
+        if ($type === 'DISCRETIONARY' && $key !== DailyCashMetroLedger::DISCRETIONARY_METRO_OTHERS_CATEGORY) {
+            $rawDesc = trim((string) $request->input('description', ''));
+            if ($rawDesc === '') {
+                throw ValidationException::withMessages([
+                    'description' => ['Description is required for discretionary entries.'],
+                ]);
+            }
+
+            return [
+                'type' => $type,
+                'category' => $key,
+                'subcategory_override' => null,
+                'description' => strtoupper(preg_replace('/\s+/', ' ', $rawDesc)),
+            ];
+        }
+
         return [
             'type' => $type,
             'category' => $key,
             'subcategory_override' => null,
             'description' => $this->normalizedWorksheetOptionalDescription($request),
         ];
+    }
+
+    /** Optional classification for discretionary “Others” worksheet line (stored on subcategory_override). */
+    private function worksheetDiscretionaryMetroOthersSubcategoryOverride(Request $request): ?string
+    {
+        return DailyCashflowCategories::normalizedSubcategoryFromForm(
+            'DISCRETIONARY',
+            $request->input('subcategory_key')
+        );
     }
 
     /** Uppercase worksheet “free” description; empty when omitted (non–Cash-from-Bank, non-Others lines). */
@@ -590,7 +657,8 @@ class DailyCashController extends Controller
 
         $this->ledger->syncOpeningBalancesForwardFrom($dailyCash);
 
-        return back()->with('success', 'Entry deleted. Later days in this period were synced to the new balances.');
+        return redirect()->route('daily-cash.show', $dailyCash)
+            ->with('success', 'Entry deleted. Later days in this period were synced to the new balances.');
     }
 
     // Deposit to bank: creates a Deposit record + SAVINGS entry on this day

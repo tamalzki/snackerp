@@ -73,11 +73,12 @@ return [
         'DISCRETIONARY' => [
             'home_sa_balay' => 'Sa balay / home & household (discretionary)',
             'dining_out' => 'Dining out',
-            'groceries_household' => 'Groceries / household (food-at-home)',
-            'entertainment' => 'Entertainment — streaming, hobbies',
-            'personal_care' => 'Personal care — haircut, gym',
+            'groceries_household' => 'Groceries / household',
+            'entertainment' => 'Entertainment',
+            'personal_care' => 'Personal care',
             'gifts_donations' => 'Gifts & donations',
             'travel_vacation' => 'Travel & vacation',
+            'metro_discretionary_others' => 'Others',
         ],
         'SAVINGS' => [
             'cash_bank_investment' => 'Cash in bank / savings / investment',
@@ -85,6 +86,12 @@ return [
         ],
         'CAPITAL' => [
             'capital_contribution' => 'Capital',
+        ],
+
+        /** Metro daily worksheet rows (stored on category, type OTHER). */
+        'OTHER' => [
+            'metro_other_misc' => 'Miscellaneous',
+            'metro_other_others' => 'Others',
         ],
     ],
 
@@ -185,19 +192,19 @@ return [
             ],
             [
                 'key' => 'groceries_household',
-                'label' => 'Groceries / household — food-at-home',
+                'label' => 'Groceries / household',
                 'category_value' => 'groceries_household',
                 'subcategory_keys' => ['groceries_household'],
             ],
             [
                 'key' => 'entertainment',
-                'label' => 'Entertainment — streaming, hobbies',
+                'label' => 'Entertainment',
                 'category_value' => 'entertainment',
                 'subcategory_keys' => ['entertainment'],
             ],
             [
                 'key' => 'personal_care',
-                'label' => 'Personal care — haircut, gym',
+                'label' => 'Personal care',
                 'category_value' => 'personal_care',
                 'subcategory_keys' => ['personal_care'],
             ],
@@ -332,6 +339,23 @@ return [
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_suman_water', 'category_display' => 'Water'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_suman_farm', 'category_display' => 'Farm'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_suman_others', 'category_display' => 'Others'],
+
+        ['kind' => 'heading', 'title' => 'DISCRETIONARY'],
+        ['kind' => 'line', 'type' => 'DISCRETIONARY', 'category_key' => 'dining_out', 'category_display' => 'Dining out'],
+        ['kind' => 'line', 'type' => 'DISCRETIONARY', 'category_key' => 'groceries_household', 'category_display' => 'Groceries / household'],
+        ['kind' => 'line', 'type' => 'DISCRETIONARY', 'category_key' => 'entertainment', 'category_display' => 'Entertainment'],
+        ['kind' => 'line', 'type' => 'DISCRETIONARY', 'category_key' => 'personal_care', 'category_display' => 'Personal care'],
+        ['kind' => 'line', 'type' => 'DISCRETIONARY', 'category_key' => 'gifts_donations', 'category_display' => 'Gifts & donations'],
+        ['kind' => 'line', 'type' => 'DISCRETIONARY', 'category_key' => 'travel_vacation', 'category_display' => 'Travel & vacation'],
+        ['kind' => 'line', 'type' => 'DISCRETIONARY', 'category_key' => 'metro_discretionary_others', 'category_display' => 'Others'],
+
+        ['kind' => 'heading', 'title' => 'SAVINGS'],
+        ['kind' => 'line', 'type' => 'SAVINGS', 'category_key' => 'cash_bank_investment', 'category_display' => 'Cash in bank / savings / investment'],
+        ['kind' => 'line', 'type' => 'SAVINGS', 'category_key' => 'savings_investment', 'category_display' => 'Savings / investment'],
+
+        ['kind' => 'heading', 'title' => 'OTHER'],
+        ['kind' => 'line', 'type' => 'OTHER', 'category_key' => 'metro_other_misc', 'category_display' => 'Miscellaneous'],
+        ['kind' => 'line', 'type' => 'OTHER', 'category_key' => 'metro_other_others', 'category_display' => 'Others'],
     ],
 
 ];

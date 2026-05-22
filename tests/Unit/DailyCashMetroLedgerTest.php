@@ -17,6 +17,9 @@ class DailyCashMetroLedgerTest extends TestCase
         $this->assertContains('capital_contribution', $keys);
         $this->assertContains('metro_exp_farm_others', $keys);
         $this->assertContains('metro_exp_suman_suman', $keys);
+        $this->assertContains('dining_out', $keys);
+        $this->assertContains('metro_other_misc', $keys);
+        $this->assertContains('metro_discretionary_others', $keys);
     }
 
     public function test_parent_column_label_from_heading(): void
@@ -99,8 +102,15 @@ class DailyCashMetroLedgerTest extends TestCase
 
         $this->assertNotEmpty($tree['income']['buckets'] ?? []);
         $this->assertNotEmpty($tree['expense']['buckets'] ?? []);
+        $this->assertNotEmpty($tree['discretionary']['buckets'] ?? []);
+        $this->assertNotEmpty($tree['savings']['buckets'] ?? []);
+        $this->assertNotEmpty($tree['other']['buckets'] ?? []);
         $this->assertTrue(DailyCashMetroLedger::isMetroOthersCategory('metro_income_others'));
         $this->assertTrue(DailyCashMetroLedger::isMetroOthersCategory('metro_exp_assorted_others'));
+        $this->assertTrue(DailyCashMetroLedger::isMetroOthersCategory('metro_other_others'));
+        $this->assertFalse(DailyCashMetroLedger::isMetroOthersCategory('metro_discretionary_others'));
+        $this->assertTrue(DailyCashMetroLedger::worksheetNeedsSpecifyOtherField('metro_discretionary_others'));
+        $this->assertTrue(DailyCashMetroLedger::worksheetUsesOthersAggregateLabel('metro_discretionary_others'));
     }
 
     public function test_non_metro_excludes_capital_entries(): void
@@ -147,6 +157,9 @@ class DailyCashMetroLedgerTest extends TestCase
         $this->assertContains('CAPITAL', $headings);
         $this->assertContains('INCOME: ASSORTED', $headings);
         $this->assertContains('EXPENSE: SUMAN', $headings);
+        $this->assertContains('DISCRETIONARY', $headings);
+        $this->assertContains('SAVINGS', $headings);
+        $this->assertContains('OTHER', $headings);
         $this->assertContains('metro_income_suman', $keys);
         $this->assertContains('metro_exp_assorted_ingredients', $keys);
         $this->assertContains('capital_contribution', $keys);
