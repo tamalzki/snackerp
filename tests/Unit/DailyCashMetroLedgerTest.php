@@ -22,6 +22,7 @@ class DailyCashMetroLedgerTest extends TestCase
         $this->assertContains('metro_exp_suman_suman', $keys);
         $this->assertContains('dining_out', $keys);
         $this->assertContains('metro_other_misc', $keys);
+        $this->assertContains('metro_other_adjustments', $keys);
         $this->assertContains('metro_discretionary_others', $keys);
     }
 

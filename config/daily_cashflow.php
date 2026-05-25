@@ -95,6 +95,7 @@ return [
         'OTHER' => [
             'metro_other_misc' => 'Miscellaneous',
             'metro_other_others' => 'Others',
+            'metro_other_adjustments' => 'Adjustments',
         ],
 
         /** Adjustment lines on the daily worksheet (per-group reconciliation + standalone group). Amounts may be negative. */
@@ -394,6 +395,7 @@ return [
 
         ['kind' => 'heading', 'title' => 'OTHER'],
         ['kind' => 'line', 'type' => 'OTHER', 'category_key' => 'metro_other_misc', 'category_display' => 'Miscellaneous'],
+        ['kind' => 'line', 'type' => 'OTHER', 'category_key' => 'metro_other_adjustments', 'category_display' => 'Adjustments'],
         ['kind' => 'line', 'type' => 'OTHER', 'category_key' => 'metro_other_others', 'category_display' => 'Others'],
     ],
 

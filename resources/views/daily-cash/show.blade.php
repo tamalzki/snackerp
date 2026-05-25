@@ -648,10 +648,9 @@ function dailyCashDiscretionaryMetroOthersCategoryKey() {
 
 window.__dailyCashEditLegacyMode = false;
 
+/** Balance carry still runs server-side; no blocking confirm before save. */
 function dailyCashConfirmCarryImpact() {
-    return window.confirm(
-        'This will recalculate this day’s closing balance and automatically update opening balances on all later days in this cash period (including today), so carried cash stays in sync.\n\nContinue?'
-    );
+    return true;
 }
 function dailyCashConfirmDeleteEntry() {
     return window.confirm(
@@ -704,6 +703,22 @@ function dailyCashFillLineBucketsSelect(sel, buckets) {
     }
 }
 
+/** Flat Capital categories (+ custom row); same placeholder as bucketed worksheets. */
+function dailyCashFillCapitalLineSelect(sel, lines) {
+    sel.innerHTML = '';
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = '— Choose category —';
+    sel.appendChild(ph);
+    const list = lines || [];
+    const og = document.createElement('optgroup');
+    og.label = 'Capital';
+    for (let j = 0; j < list.length; j++) {
+        dailyCashAppendLineOption(og, list[j]);
+    }
+    sel.appendChild(og);
+}
+
 function dailyCashFillExpenseBucketSelect(sel, meta) {
     sel.innerHTML = '';
     const ph = document.createElement('option');
@@ -742,6 +757,7 @@ function dailyCashSetAddEntryLineLabel(grp) {
     else if (grp === 'EXPENSES') lbl.textContent = 'Expense line';
     else if (grp === 'SAVINGS') lbl.textContent = 'Savings line';
     else if (grp === 'OTHER') lbl.textContent = 'Other line';
+    else if (grp === 'CAPITAL') lbl.textContent = 'Category';
     else lbl.textContent = 'Category line';
 }
 
@@ -753,6 +769,7 @@ function dailyCashSetEditEntryLineLabel(grp) {
     else if (grp === 'EXPENSES') lbl.textContent = 'Expense line';
     else if (grp === 'SAVINGS') lbl.textContent = 'Savings line';
     else if (grp === 'OTHER') lbl.textContent = 'Other line';
+    else if (grp === 'CAPITAL') lbl.textContent = 'Category';
     else lbl.textContent = 'Category line';
 }
 
@@ -770,9 +787,9 @@ function dailyCashSyncAddOtherDescVisibility() {
 
     dailyCashSetAddEntryLineLabel(grp);
 
-    if (grp === 'CASH_FROM_BANK' || grp === '' || grp === 'CAPITAL') {
+    if (grp === 'CASH_FROM_BANK' || grp === '') {
         dailyCashApplyAmountSignMode(amtInput, amtNote, false);
-        if (typeHidden) typeHidden.value = grp === 'CASH_FROM_BANK' ? 'CASH_FROM_BANK' : grp;
+        if (typeHidden) typeHidden.value = grp === 'CASH_FROM_BANK' ? 'CASH_FROM_BANK' : '';
         return;
     }
 
@@ -877,11 +894,9 @@ function dailyCashSyncAddEntryForm(options) {
     }
 
     if (grp === 'CAPITAL') {
-        const lines = (meta.capital && meta.capital.lines) ? meta.capital.lines : [];
-        if (lines[0]) keyHidden.value = lines[0].key;
-        descWrap.classList.remove('d-none');
-        descIn.disabled = false;
-        dailyCashSetAddDescriptionRequireStar(false);
+        lineWrap.classList.remove('d-none');
+        dailyCashFillCapitalLineSelect(lineSel, (meta.capital && meta.capital.lines) ? meta.capital.lines : []);
+        dailyCashSyncAddOtherDescVisibility();
         return;
     }
 
@@ -1007,10 +1022,10 @@ function dailyCashAddEntrySubmit() {
 
     if (!dailyCashConfirmCarryImpact()) return false;
 
-    if (grp !== 'CASH_FROM_BANK' && grp !== 'CAPITAL') {
+    if (grp !== 'CASH_FROM_BANK') {
         dailyCashSyncAddOtherDescVisibility();
         if (!document.getElementById('addEntryWorksheetCategoryKey').value) {
-            window.alert('Choose a worksheet line.');
+            window.alert((grp === 'CAPITAL') ? 'Choose a category.' : 'Choose a worksheet line.');
             return false;
         }
     }
@@ -1075,9 +1090,9 @@ function dailyCashSyncEditOtherDescVisibility() {
 
     dailyCashSetEditEntryLineLabel(grp);
 
-    if (grp === 'CASH_FROM_BANK' || grp === '' || grp === 'CAPITAL') {
+    if (grp === 'CASH_FROM_BANK' || grp === '') {
         dailyCashApplyAmountSignMode(amtInput, null, false);
-        if (typeHidden) typeHidden.value = grp === 'CASH_FROM_BANK' ? 'CASH_FROM_BANK' : grp;
+        if (typeHidden) typeHidden.value = grp === 'CASH_FROM_BANK' ? 'CASH_FROM_BANK' : '';
         return;
     }
 
@@ -1171,11 +1186,9 @@ function dailyCashSyncEditWorksheetForm(options) {
     }
 
     if (grp === 'CAPITAL') {
-        const lines = (meta.capital && meta.capital.lines) ? meta.capital.lines : [];
-        if (lines[0]) keyHidden.value = lines[0].key;
-        descWrap.classList.remove('d-none');
-        descIn.disabled = false;
-        dailyCashSetEditDescriptionRequireStar(false);
+        lineWrap.classList.remove('d-none');
+        dailyCashFillCapitalLineSelect(lineSel, (meta.capital && meta.capital.lines) ? meta.capital.lines : []);
+        dailyCashSyncEditOtherDescVisibility();
         return;
     }
 
@@ -1268,7 +1281,16 @@ function dailyCashPrefillEditWorksheet(isBank, ledgerType, categoryKey, descript
     if (ledgerType === 'CAPITAL') {
         grp.value = 'CAPITAL';
         dailyCashSyncEditWorksheetForm({ resetInputs: false });
-        descIn.value = description;
+        lineSel.value = key;
+        if (lineSel.value !== key) {
+            dailyCashFillCapitalLineSelect(lineSel, (meta.capital && meta.capital.lines) ? meta.capital.lines : []);
+            lineSel.value = key;
+        }
+        dailyCashSyncEditOtherDescVisibility();
+        const opt = lineSel.options[lineSel.selectedIndex];
+        const needsOther = opt && opt.dataset.needsOther === '1';
+        if (needsOther) otherIn.value = description;
+        else descIn.value = description;
         return;
     }
 
@@ -1515,10 +1537,10 @@ function dailyCashEditEntrySubmit() {
             window.alert('Choose an entry group.');
             return false;
         }
-        if (grp !== 'CASH_FROM_BANK' && grp !== 'CAPITAL') {
+        if (grp !== 'CASH_FROM_BANK') {
             dailyCashSyncEditOtherDescVisibility();
             if (!document.getElementById('editEntryWorksheetCategoryKey').value) {
-                window.alert('Choose a worksheet line.');
+                window.alert((grp === 'CAPITAL') ? 'Choose a category.' : 'Choose a worksheet line.');
                 return false;
             }
         }
