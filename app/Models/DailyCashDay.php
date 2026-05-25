@@ -17,6 +17,11 @@ class DailyCashDay extends Model
         return $this->hasMany(DailyCashEntry::class)->orderBy('sort_order')->orderBy('id');
     }
 
+    public function bankDayCells(): HasMany
+    {
+        return $this->hasMany(DailyCashBankDayCell::class, 'daily_cash_day_id');
+    }
+
     // --- Summary helpers ---
 
     public function totalByType(string|array $types): float
@@ -28,12 +33,21 @@ class DailyCashDay extends Model
 
     public function capital(): float
     {
-        return $this->totalByType('CAPITAL');
+        $fromCapitalType = $this->totalByType('CAPITAL');
+        $legacyBankAsIncome = (float) $this->entries
+            ->where('type', 'INCOME')
+            ->where('category', DailyCashflowCategories::CASH_FROM_BANK)
+            ->sum('amount');
+
+        return $fromCapitalType + $legacyBankAsIncome;
     }
 
     public function income(): float
     {
-        return $this->totalByType('INCOME');
+        return (float) $this->entries
+            ->where('type', 'INCOME')
+            ->filter(fn ($e) => ($e->category ?? '') !== DailyCashflowCategories::CASH_FROM_BANK)
+            ->sum('amount');
     }
 
     /** Income lines excluding ATM/bank withdrawals (shown separately on the daily summary). */
@@ -47,10 +61,8 @@ class DailyCashDay extends Model
 
     public function cashFromBankWithdrawals(): float
     {
-        return (float) $this->entries
-            ->where('type', 'INCOME')
-            ->where('category', DailyCashflowCategories::CASH_FROM_BANK)
-            ->sum('amount');
+        return (float) $this->entries->filter(fn ($e) => ($e->category ?? '') === DailyCashflowCategories::CASH_FROM_BANK
+            && ($e->type === 'INCOME' || $e->type === 'CAPITAL'))->sum('amount');
     }
 
     public function expenses(): float
@@ -73,9 +85,14 @@ class DailyCashDay extends Model
         return $this->totalByType('OTHER');
     }
 
+    public function adjustment(): float
+    {
+        return $this->totalByType('ADJUSTMENT');
+    }
+
     public function net(): float
     {
-        return $this->capital() + $this->income() - $this->expenses() - $this->discretionary() - $this->savings() - $this->other();
+        return $this->capital() + $this->income() - $this->expenses() - $this->discretionary() - $this->savings() - $this->other() + $this->adjustment();
     }
 
     // Monthly totals (all days in the same month)
@@ -91,12 +108,36 @@ class DailyCashDay extends Model
 
     public function monthlyCapital(): float
     {
-        return $this->monthlyTotalByType('CAPITAL');
+        $y = (int) $this->date->year;
+        $m = (int) $this->date->month;
+
+        $capitalType = (float) DailyCashEntry::query()
+            ->whereHas('day', fn ($q) => $q->whereYear('date', $y)->whereMonth('date', $m))
+            ->where('type', 'CAPITAL')
+            ->sum('amount');
+
+        $legacyBank = (float) DailyCashEntry::query()
+            ->whereHas('day', fn ($q) => $q->whereYear('date', $y)->whereMonth('date', $m))
+            ->where('type', 'INCOME')
+            ->where('category', DailyCashflowCategories::CASH_FROM_BANK)
+            ->sum('amount');
+
+        return $capitalType + $legacyBank;
     }
 
     public function monthlyIncome(): float
     {
-        return $this->monthlyTotalByType('INCOME');
+        $y = (int) $this->date->year;
+        $m = (int) $this->date->month;
+
+        return (float) DailyCashEntry::query()
+            ->whereHas('day', fn ($q) => $q->whereYear('date', $y)->whereMonth('date', $m))
+            ->where('type', 'INCOME')
+            ->where(function ($q) {
+                $q->where('category', '!=', DailyCashflowCategories::CASH_FROM_BANK)
+                    ->orWhereNull('category');
+            })
+            ->sum('amount');
     }
 
     public function monthlyExpenses(): float
@@ -114,6 +155,11 @@ class DailyCashDay extends Model
         return $this->monthlyTotalByType('SAVINGS');
     }
 
+    public function monthlyAdjustment(): float
+    {
+        return $this->monthlyTotalByType('ADJUSTMENT');
+    }
+
     public function monthlyNet(): float
     {
         $other = (float) DailyCashEntry::where('type', 'OTHER')
@@ -122,6 +168,7 @@ class DailyCashDay extends Model
             ->sum('amount');
 
         return $this->monthlyCapital() + $this->monthlyIncome()
-             - $this->monthlyExpenses() - $this->monthlyDiscretionary() - $this->monthlySavings() - $other;
+             - $this->monthlyExpenses() - $this->monthlyDiscretionary() - $this->monthlySavings() - $other
+             + $this->monthlyAdjustment();
     }
 }

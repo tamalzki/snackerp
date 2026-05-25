@@ -96,7 +96,8 @@
                         @php
                             $stmtPf = \App\Support\DailyCashflowCategories::entryToFormPreset($entry);
                             $stmtFormType = $entry->type;
-                            if ($entry->type === 'INCOME' && ($entry->category ?? '') === \App\Support\DailyCashflowCategories::CASH_FROM_BANK) {
+                            if (($entry->category ?? '') === \App\Support\DailyCashflowCategories::CASH_FROM_BANK
+                                && ($entry->type === 'INCOME' || $entry->type === 'CAPITAL')) {
                                 $stmtFormType = 'CASH_FROM_BANK';
                             }
                         @endphp
@@ -379,7 +380,7 @@ function statementFillSubcategory(selectEl, ledgerType) {
     }
     function editLedgerType() {
         if (typeSelect) {
-            return typeSelect.value === 'CASH_FROM_BANK' ? 'INCOME' : typeSelect.value;
+            return typeSelect.value === 'CASH_FROM_BANK' ? 'CAPITAL' : typeSelect.value;
         }
         return typeHidden ? typeHidden.value : @json($defaultType);
     }

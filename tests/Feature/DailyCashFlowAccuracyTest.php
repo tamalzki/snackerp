@@ -109,7 +109,8 @@ class DailyCashFlowAccuracyTest extends TestCase
         ]);
         $day->load('entries');
 
-        $this->assertSame(400.0, $day->income());
+        $this->assertSame(300.0, $day->capital());
+        $this->assertSame(100.0, $day->income());
         $this->assertSame(300.0, $day->cashFromBankWithdrawals());
         $this->assertSame(100.0, $day->incomeExcludingBankWithdrawals());
     }
@@ -215,6 +216,55 @@ class DailyCashFlowAccuracyTest extends TestCase
 
         $this->assertNotNull($capitalLine);
         $this->assertSame(100.0, (float) $capitalLine['amount']);
+        $this->assertSame(0.0, (float) ($capitalLine['bank_withdrawals_in_capital'] ?? 0));
+    }
+
+    /** Legacy INCOME + cash_from_bank and CAPITAL + cash_from_bank both aggregate into Metro Capital row totals. */
+    public function test_metro_daily_worksheet_capital_row_includes_bank_withdrawals(): void
+    {
+        $day = DailyCashDay::create(['date' => '2026-09-15', 'opening_balance' => 0]);
+        DailyCashEntry::create([
+            'daily_cash_day_id' => $day->id,
+            'type' => 'INCOME',
+            'category' => DailyCashflowCategories::CASH_FROM_BANK,
+            'description' => 'ATM',
+            'amount' => 25,
+            'sort_order' => 1,
+        ]);
+        DailyCashEntry::create([
+            'daily_cash_day_id' => $day->id,
+            'type' => 'CAPITAL',
+            'category' => DailyCashflowCategories::CASH_FROM_BANK,
+            'description' => 'ATM2',
+            'amount' => 10,
+            'sort_order' => 2,
+        ]);
+        DailyCashEntry::create([
+            'daily_cash_day_id' => $day->id,
+            'type' => 'CAPITAL',
+            'category' => 'capital_contribution',
+            'description' => 'CONTRIBUTION',
+            'amount' => 60,
+            'sort_order' => 3,
+        ]);
+        $day->load('entries');
+
+        $this->assertSame(95.0, $day->capital());
+        $this->assertSame(0.0, $day->income());
+
+        $rows = DailyCashMetroLedger::buildSheetRows($day);
+        $capitalLine = collect($rows)->first(fn (array $r) => ($r['kind'] ?? '') === 'line'
+            && ($r['category_key'] ?? '') === 'capital_contribution');
+
+        $this->assertNotNull($capitalLine);
+        $this->assertSame(60.0, (float) $capitalLine['amount']);
+
+        $bankLine = collect($rows)->first(fn (array $r) => ($r['kind'] ?? '') === 'line'
+            && ($r['category_key'] ?? '') === DailyCashflowCategories::CASH_FROM_BANK);
+
+        $this->assertNotNull($bankLine);
+        $this->assertSame(35.0, (float) $bankLine['amount']);
+        $this->assertSame(35.0, (float) ($bankLine['bank_withdrawals_in_capital'] ?? 0));
     }
 
     public function test_annual_grid_places_amounts_on_metro_lines_and_footer_totals_full_ledger(): void

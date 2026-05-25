@@ -147,14 +147,10 @@ class DailyCashLedgerService
     {
         DB::transaction(function () use ($day) {
             foreach (DailyCashMetroLedger::stubLines() as $stub) {
-                if ($stub['type'] === 'CAPITAL') {
-                    $exists = $day->entries()->where('type', 'CAPITAL')->exists();
-                } else {
-                    $exists = $day->entries()
-                        ->where('type', $stub['type'])
-                        ->where('category', $stub['category_key'])
-                        ->exists();
-                }
+                $exists = $day->entries()
+                    ->where('type', $stub['type'])
+                    ->where('category', $stub['category_key'])
+                    ->exists();
 
                 if ($exists) {
                     continue;

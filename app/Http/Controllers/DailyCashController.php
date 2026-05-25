@@ -416,7 +416,7 @@ class DailyCashController extends Controller
             ]);
 
             $isBank = $request->type === 'CASH_FROM_BANK';
-            $type = $isBank ? 'INCOME' : $request->type;
+            $type = $isBank ? 'CAPITAL' : $request->type;
 
             [$category, $subcategoryOverride] = DailyCashflowCategories::resolveCategoryAndSubcategoryForEntryRequest(
                 $request,
@@ -447,95 +447,13 @@ class DailyCashController extends Controller
     }
 
     /**
-     * Day view “Add entry”: worksheet drill-down (+ cash from bank). Stores metro category keys on entries.
+     * Day view “Add entry”: worksheet drill-down (+ cash from bank, custom rows, signed adjustments).
      *
      * @return array{type: string, category: ?string, subcategory_override: ?string, description: string}
      */
     private function validatedDailyCashDayWorksheetStore(Request $request): array
     {
-        $allowedTypes = ['CAPITAL', 'INCOME', 'EXPENSES', 'DISCRETIONARY', 'SAVINGS', 'OTHER', 'CASH_FROM_BANK'];
-
-        $request->validate([
-            'type' => ['required', 'string', Rule::in($allowedTypes)],
-            'amount' => 'required|numeric|min:0.01',
-            'worksheet_category_key' => 'nullable|string|max:64',
-            'description' => 'nullable|string|max:255',
-            'other_specify' => 'nullable|string|max:255',
-            'subcategory_key' => 'nullable|string|max:64',
-        ]);
-
-        $isBank = $request->type === 'CASH_FROM_BANK';
-        $type = $isBank ? 'INCOME' : (string) $request->type;
-
-        if ($isBank) {
-            $request->validate(['description' => 'required|string|max:255']);
-
-            return [
-                'type' => $type,
-                'category' => DailyCashflowCategories::CASH_FROM_BANK,
-                'subcategory_override' => null,
-                'description' => strtoupper(preg_replace('/\s+/', ' ', trim((string) $request->description))),
-            ];
-        }
-
-        $managed = DailyCashMetroLedger::managedCategoryKeys();
-        $key = (string) $request->input('worksheet_category_key', '');
-        if ($key === '' || ! in_array($key, $managed, true)) {
-            throw ValidationException::withMessages([
-                'worksheet_category_key' => ['Choose a worksheet line for this entry.'],
-            ]);
-        }
-
-        if (! DailyCashMetroLedger::worksheetCategoryMatchesType($key, $type)) {
-            throw ValidationException::withMessages([
-                'worksheet_category_key' => ['That line does not belong to the selected group.'],
-            ]);
-        }
-
-        if ($key === DailyCashMetroLedger::DISCRETIONARY_METRO_OTHERS_CATEGORY) {
-            $request->validate(['other_specify' => 'required|string|max:255']);
-
-            return [
-                'type' => 'DISCRETIONARY',
-                'category' => DailyCashMetroLedger::DISCRETIONARY_METRO_OTHERS_CATEGORY,
-                'subcategory_override' => $this->worksheetDiscretionaryMetroOthersSubcategoryOverride($request),
-                'description' => strtoupper(preg_replace('/\s+/', ' ', trim((string) $request->other_specify))),
-            ];
-        }
-
-        if (DailyCashMetroLedger::isMetroOthersCategory($key)) {
-            $request->validate(['other_specify' => 'required|string|max:255']);
-
-            return [
-                'type' => $type,
-                'category' => $key,
-                'subcategory_override' => null,
-                'description' => strtoupper(preg_replace('/\s+/', ' ', trim((string) $request->other_specify))),
-            ];
-        }
-
-        if ($type === 'DISCRETIONARY' && $key !== DailyCashMetroLedger::DISCRETIONARY_METRO_OTHERS_CATEGORY) {
-            $rawDesc = trim((string) $request->input('description', ''));
-            if ($rawDesc === '') {
-                throw ValidationException::withMessages([
-                    'description' => ['Description is required for discretionary entries.'],
-                ]);
-            }
-
-            return [
-                'type' => $type,
-                'category' => $key,
-                'subcategory_override' => null,
-                'description' => strtoupper(preg_replace('/\s+/', ' ', $rawDesc)),
-            ];
-        }
-
-        return [
-            'type' => $type,
-            'category' => $key,
-            'subcategory_override' => null,
-            'description' => $this->normalizedWorksheetOptionalDescription($request),
-        ];
+        return $this->validatedDailyCashWorksheetPayload($request, requireCategoryKey: true);
     }
 
     /**
@@ -545,11 +463,22 @@ class DailyCashController extends Controller
      */
     private function validatedDailyCashDayWorksheetUpdate(Request $request): array
     {
-        $allowedTypes = ['CAPITAL', 'INCOME', 'EXPENSES', 'DISCRETIONARY', 'SAVINGS', 'OTHER', 'CASH_FROM_BANK'];
+        return $this->validatedDailyCashWorksheetPayload($request, requireCategoryKey: true);
+    }
+
+    /**
+     * Shared worksheet validation: cash-from-bank shortcut, custom "+ Custom row" entries (`custom:<slug>`),
+     * fixed metro lines, signed amounts for ADJUSTMENT.
+     *
+     * @return array{type: string, category: ?string, subcategory_override: ?string, description: string}
+     */
+    private function validatedDailyCashWorksheetPayload(Request $request, bool $requireCategoryKey): array
+    {
+        $allowedTypes = array_merge(array_keys(DailyCashEntry::$types), ['CASH_FROM_BANK']);
 
         $request->validate([
             'type' => ['required', 'string', Rule::in($allowedTypes)],
-            'amount' => 'required|numeric|min:0',
+            'amount' => 'required|numeric',
             'worksheet_category_key' => 'nullable|string|max:64',
             'description' => 'nullable|string|max:255',
             'other_specify' => 'nullable|string|max:255',
@@ -557,34 +486,61 @@ class DailyCashController extends Controller
         ]);
 
         $isBank = $request->type === 'CASH_FROM_BANK';
-        $type = $isBank ? 'INCOME' : (string) $request->type;
+        $pickedType = $isBank ? 'CAPITAL' : (string) $request->type;
 
         if ($isBank) {
+            $this->assertAmountValidForType($request, 'CAPITAL');
             $request->validate(['description' => 'required|string|max:255']);
 
             return [
-                'type' => $type,
+                'type' => 'CAPITAL',
                 'category' => DailyCashflowCategories::CASH_FROM_BANK,
                 'subcategory_override' => null,
                 'description' => strtoupper(preg_replace('/\s+/', ' ', trim((string) $request->description))),
             ];
         }
 
-        $request->validate(['worksheet_category_key' => 'required|string|max:64']);
+        $key = (string) $request->input('worksheet_category_key', '');
+        if ($requireCategoryKey && $key === '') {
+            throw ValidationException::withMessages([
+                'worksheet_category_key' => ['Choose a worksheet line for this entry.'],
+            ]);
+        }
+
+        if (DailyCashMetroLedger::isCustomCategory($key)) {
+            $slug = (string) DailyCashMetroLedger::customCategorySlug($key);
+            $section = $this->sectionBySlugOrFail($slug);
+            $resolvedType = $pickedType !== '' ? $pickedType : $section['primary_type'];
+            if (! $this->customRowAcceptsType($section, $resolvedType)) {
+                throw ValidationException::withMessages([
+                    'worksheet_category_key' => ['Custom rows in “'.$section['heading'].'” must match its ledger type.'],
+                ]);
+            }
+            $this->assertAmountValidForType($request, $resolvedType);
+            $request->validate(['other_specify' => 'required|string|max:255']);
+
+            return [
+                'type' => $resolvedType,
+                'category' => $key,
+                'subcategory_override' => null,
+                'description' => strtoupper(preg_replace('/\s+/', ' ', trim((string) $request->other_specify))),
+            ];
+        }
 
         $managed = DailyCashMetroLedger::managedCategoryKeys();
-        $key = (string) $request->input('worksheet_category_key', '');
         if (! in_array($key, $managed, true)) {
             throw ValidationException::withMessages([
                 'worksheet_category_key' => ['Choose a worksheet line for this entry.'],
             ]);
         }
 
-        if (! DailyCashMetroLedger::worksheetCategoryMatchesType($key, $type)) {
+        if (! DailyCashMetroLedger::worksheetCategoryMatchesType($key, $pickedType)) {
             throw ValidationException::withMessages([
                 'worksheet_category_key' => ['That line does not belong to the selected group.'],
             ]);
         }
+
+        $this->assertAmountValidForType($request, $pickedType);
 
         if ($key === DailyCashMetroLedger::DISCRETIONARY_METRO_OTHERS_CATEGORY) {
             $request->validate(['other_specify' => 'required|string|max:255']);
@@ -601,14 +557,14 @@ class DailyCashController extends Controller
             $request->validate(['other_specify' => 'required|string|max:255']);
 
             return [
-                'type' => $type,
+                'type' => $pickedType,
                 'category' => $key,
                 'subcategory_override' => null,
                 'description' => strtoupper(preg_replace('/\s+/', ' ', trim((string) $request->other_specify))),
             ];
         }
 
-        if ($type === 'DISCRETIONARY' && $key !== DailyCashMetroLedger::DISCRETIONARY_METRO_OTHERS_CATEGORY) {
+        if ($pickedType === 'DISCRETIONARY') {
             $rawDesc = trim((string) $request->input('description', ''));
             if ($rawDesc === '') {
                 throw ValidationException::withMessages([
@@ -617,7 +573,7 @@ class DailyCashController extends Controller
             }
 
             return [
-                'type' => $type,
+                'type' => $pickedType,
                 'category' => $key,
                 'subcategory_override' => null,
                 'description' => strtoupper(preg_replace('/\s+/', ' ', $rawDesc)),
@@ -625,11 +581,62 @@ class DailyCashController extends Controller
         }
 
         return [
-            'type' => $type,
+            'type' => $pickedType,
             'category' => $key,
             'subcategory_override' => null,
             'description' => $this->normalizedWorksheetOptionalDescription($request),
         ];
+    }
+
+    /** ADJUSTMENT: signed but must be non-zero. Other types: positive (≥ 0.01). */
+    private function assertAmountValidForType(Request $request, string $type): void
+    {
+        $amt = (float) $request->input('amount');
+        if ($type === 'ADJUSTMENT') {
+            if (abs($amt) < 0.005) {
+                throw ValidationException::withMessages([
+                    'amount' => ['Adjustment amount must not be zero. Use a negative number to deduct.'],
+                ]);
+            }
+
+            return;
+        }
+        if ($amt < 0.01) {
+            throw ValidationException::withMessages([
+                'amount' => ['Amount must be greater than zero.'],
+            ]);
+        }
+    }
+
+    /** @return array{heading: string, slug: string, primary_type: string, lines: list<array<string, mixed>>} */
+    private function sectionBySlugOrFail(string $slug): array
+    {
+        foreach (DailyCashMetroLedger::sections() as $section) {
+            if (($section['slug'] ?? '') === $slug) {
+                return $section;
+            }
+        }
+
+        throw ValidationException::withMessages([
+            'worksheet_category_key' => ['Unknown worksheet section for custom row.'],
+        ]);
+    }
+
+    /**
+     * @param  array{primary_type: string, lines: list<array<string, mixed>>}  $section
+     */
+    private function customRowAcceptsType(array $section, string $type): bool
+    {
+        if ($type === '' || $type === $section['primary_type']) {
+            return true;
+        }
+        foreach ($section['lines'] as $line) {
+            if (($line['type'] ?? '') === $type) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Optional classification for discretionary “Others” worksheet line (stored on subcategory_override). */
@@ -724,4 +731,5 @@ class DailyCashController extends Controller
 
         return back()->with('success', 'Deposit recorded. Later days in this period were synced to the new balances.');
     }
+
 }

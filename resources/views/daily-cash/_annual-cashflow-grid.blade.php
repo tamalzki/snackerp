@@ -153,7 +153,18 @@
                             @if($lineIdx === 0)
                                 <td rowspan="{{ $typeRowspan }}" class="sticky-grp ps-3 py-2 align-top text-body">{{ $parentLabel }}</td>
                             @endif
-                            <td class="sticky-cat py-2 text-body">{{ $line['category_display'] ?? '' }}</td>
+                            @php
+                                $bankCapAnnual = (float) ($line['bank_withdrawals_in_capital'] ?? 0);
+                                $lineLedgerType = $line['type'] ?? '';
+                            @endphp
+                            <td class="sticky-cat py-2 text-body">
+                                {{ $line['category_display'] ?? '' }}
+                                @if($lineLedgerType === 'CAPITAL' && abs($bankCapAnnual) > 0.005)
+                                    <span class="d-block text-muted mt-1" style="font-size:0.62rem;">
+                                        Includes cash from bank withdrawals (&#8369;{{ number_format($bankCapAnnual, 2) }})
+                                    </span>
+                                @endif
+                            </td>
                             @for($m = 1; $m <= 12; $m++)
                                 @if($m > 1)
                                     <td class="month-gap"></td>

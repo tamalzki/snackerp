@@ -88,13 +88,6 @@
     </div>
 </div>
 
-<div class="alert alert-warning alert-dismissible fade show mb-2 py-2 small" role="alert">
-    <i class="bi bi-link-45deg"></i>
-    <strong>Carry-forward chain.</strong>
-    Adding or changing entries, recording a deposit, or correcting starting cash on this date updates this day’s closing and <strong>automatically adjusts opening balances on all later dates</strong> in the same cash period (through today). You will be asked to confirm before each save.
-    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-</div>
-
 <div class="row g-3">
 
     {{-- LEFT: Daily Summary --}}
@@ -111,7 +104,7 @@
                 <div style="font-size:1.8rem;font-weight:700;color:#007A5E;">
                     ₱{{ number_format($totalAvailableCash, 2) }}
                 </div>
-                <div class="text-muted small mt-1">Starting cash + today’s net. <strong>Cash from Bank — Withdrawals</strong> (add entry) increases this total; <strong>Deposit to Bank</strong> reduces it because cash moved out of the till.</div>
+                <div class="text-muted small mt-1">Starting cash + today’s net.</div>
                 <button data-bs-toggle="modal" data-bs-target="#editCashModal"
                         class="btn btn-xs btn-outline-secondary mt-1"
                         style="font-size:0.72rem;padding:1px 8px;">
@@ -160,6 +153,15 @@
                             </td>
                             <td class="text-end pe-3">₱{{ number_format($dailyCash->savings(), 2) }}</td>
                         </tr>
+                        @php $adj = $dailyCash->adjustment(); @endphp
+                        @if(abs($adj) > 0.005)
+                        <tr>
+                            <td class="ps-3"><span class="badge bg-warning text-dark" style="font-size:0.65rem;">Adjustment</span>
+                                <span class="d-block text-muted" style="font-size:0.65rem;">signed reconciling line</span>
+                            </td>
+                            <td class="text-end pe-3 {{ $adj < 0 ? 'text-danger' : 'text-success' }}">₱{{ number_format($adj, 2) }}</td>
+                        </tr>
+                        @endif
                         @if($dailyCash->other() > 0)
                         <tr>
                             <td class="ps-3"><span class="badge bg-dark" style="font-size:0.65rem;">Other</span></td>
@@ -234,10 +236,10 @@
     {{-- RIGHT: Itemized Entries --}}
     <div class="col-lg-9">
         <div class="card">
-            <div class="card-header py-2 d-flex justify-content-between align-items-center">
+            <div class="card-header py-2 d-flex justify-content-between align-items-center gap-2 flex-wrap">
                 <span class="fw-bold small text-uppercase">
                     <i class="bi bi-table text-success"></i>
-                    {{ $dailyCash->date->format('l, F d Y') }} — Entries
+                    {{ $dailyCash->date->format('l, F d Y') }} — Worksheet / entries
                 </span>
                 <div class="d-flex flex-wrap align-items-center gap-1">
                     <div class="btn-group btn-group-sm d-none d-md-inline-flex" role="group">
@@ -246,7 +248,7 @@
                         <a href="{{ route('daily-cash.statements.discretionary', ['year' => $dailyCash->date->year]) }}" class="btn btn-outline-secondary" title="Discretionary">Discr.</a>
                         <a href="{{ route('daily-cash.statements.savings', ['year' => $dailyCash->date->year]) }}" class="btn btn-outline-secondary" title="Savings">Sav.</a>
                     </div>
-                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addEntryModal">
+                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addEntryModal">
                         <i class="bi bi-plus-lg"></i> Add Entry
                     </button>
                 </div>
@@ -278,125 +280,41 @@
                         vertical-align: middle;
                     }
                 </style>
+                @php
+                    $metroSections = [];
+                    $currentSection = null;
+                    foreach ($metroSheetRows as $_sheetRow) {
+                        $_k = $_sheetRow['kind'] ?? '';
+                        if ($_k === 'heading') {
+                            if ($currentSection !== null) {
+                                $metroSections[] = $currentSection;
+                            }
+                            $currentSection = ['heading' => $_sheetRow['title'] ?? '', 'lines' => []];
+                        } elseif ($_k === 'line' && $currentSection !== null) {
+                            $currentSection['lines'][] = $_sheetRow;
+                        }
+                    }
+                    if ($currentSection !== null) {
+                        $metroSections[] = $currentSection;
+                    }
+                @endphp
                 <div class="table-responsive">
                     <table class="table table-sm mb-0 align-middle daily-cash-worksheet" style="font-size:0.82rem;">
                         <thead>
                             <tr>
                                 <th class="ps-2" style="width:9rem;">Group</th>
                                 <th>Category</th>
-                                <th class="text-end" style="width:100px;">Capital</th>
-                                <th class="text-end" style="width:100px;">Income</th>
-                                <th class="text-end" style="width:100px;">Expenses</th>
-                                <th class="text-end" style="width:100px;">Discret.</th>
-                                <th class="text-end" style="width:100px;">Savings</th>
-                                <th class="text-end" style="width:100px;">Other</th>
+                                <th class="text-end" style="width:90px;">Capital</th>
+                                <th class="text-end" style="width:90px;">Income</th>
+                                <th class="text-end" style="width:90px;">Expenses</th>
+                                <th class="text-end" style="width:90px;">Discret.</th>
+                                <th class="text-end" style="width:90px;">Savings</th>
+                                <th class="text-end" style="width:90px;">Adjustment</th>
+                                <th class="text-end" style="width:90px;">Other</th>
                                 <th style="width:140px;"></th>
                             </tr>
                         </thead>
-                            @php
-                                $metroSections = [];
-                                $currentSection = null;
-                                foreach ($metroSheetRows as $_sheetRow) {
-                                    $_k = $_sheetRow['kind'] ?? '';
-                                    if ($_k === 'heading') {
-                                        if ($currentSection !== null) {
-                                            $metroSections[] = $currentSection;
-                                        }
-                                        $currentSection = ['heading' => $_sheetRow['title'] ?? '', 'lines' => []];
-                                    } elseif ($_k === 'line' && $currentSection !== null) {
-                                        $currentSection['lines'][] = $_sheetRow;
-                                    }
-                                }
-                                if ($currentSection !== null) {
-                                    $metroSections[] = $currentSection;
-                                }
-                            @endphp
-                            @foreach($metroSections as $section)
-                                @php
-                                    $lines = $section['lines'] ?? [];
-                                    $typeRowspan = count($lines);
-                                    $parentLabel = \App\Support\DailyCashMetroLedger::parentColumnLabelFromSectionHeading($section['heading'] ?? '');
-                                @endphp
-                                @if($typeRowspan > 0)
-                                <tbody class="daily-cash-sheet-group">
-                                @foreach($lines as $lineIdx => $sheetRow)
-                                    @php
-                                        $lineType = $sheetRow['type'];
-                                        $lineAmt = (float) ($sheetRow['amount'] ?? 0);
-                                        $hasAmt = abs($lineAmt) > 0.005;
-                                        $pc = \App\Support\DailyCashMetroLedger::primaryAmountColumn($lineType);
-                                        $rep = $sheetRow['representative_entry'] ?? null;
-                                        $categoryDisplay = $sheetRow['category_display'] ?? '';
-                                    @endphp
-                                    <tr>
-                                        @if($lineIdx === 0)
-                                            <td rowspan="{{ $typeRowspan }}" class="ps-3 py-2 align-top text-body" style="width:9rem;max-width:11rem;">
-                                                {{ $parentLabel }}
-                                            </td>
-                                        @endif
-                                        <td class="align-top py-2 text-body">
-                                            {{ $categoryDisplay }}
-                                            @if($lineType === 'INCOME' && ($sheetRow['category_key'] ?? '') === 'cash_from_bank')
-                                                <span class="d-block text-muted mt-1" style="font-size:0.62rem;">Withdrawal</span>
-                                            @endif
-                                        </td>
-                                        <td class="text-end align-top py-2">
-                                            @if($pc === 'capital' && $hasAmt)
-                                                <span>₱{{ number_format($lineAmt, 2) }}</span>
-                                            @endif
-                                        </td>
-                                        <td class="text-end align-top py-2">
-                                            @if($pc === 'income' && $hasAmt)
-                                                ₱{{ number_format($lineAmt, 2) }}
-                                            @endif
-                                        </td>
-                                        <td class="text-end align-top py-2">
-                                            @if($pc === 'expenses' && $hasAmt)
-                                                ₱{{ number_format($lineAmt, 2) }}
-                                            @endif
-                                        </td>
-                                        <td class="text-end align-top py-2">
-                                            @if($pc === 'discretionary' && $hasAmt)
-                                                <span>₱{{ number_format($lineAmt, 2) }}</span>
-                                            @endif
-                                        </td>
-                                        <td class="text-end align-top py-2">
-                                            @if($pc === 'savings' && $hasAmt)
-                                                ₱{{ number_format($lineAmt, 2) }}
-                                            @endif
-                                        </td>
-                                        <td class="text-end align-top py-2">
-                                            @if($pc === 'other' && $hasAmt)
-                                                ₱{{ number_format($lineAmt, 2) }}
-                                            @endif
-                                        </td>
-                                        <td class="text-end pe-2 align-top py-2" style="white-space:nowrap;">
-                                            @if($rep)
-                                                <button class="btn btn-outline-secondary py-0 px-2"
-                                                        style="font-size:0.75rem;"
-                                                        onclick="editEntry({{ $rep->id }}, {{ json_encode($rep->type) }}, {{ json_encode($rep->description) }}, {{ json_encode((float) $rep->amount) }}, {{ json_encode($rep->category) }}, {{ json_encode($rep->subcategory_override ?? '') }})">
-                                                    <i class="bi bi-pencil"></i> Edit
-                                                </button>
-                                                <form method="POST"
-                                                      action="{{ route('daily-cash.entries.destroy', [$dailyCash, $rep]) }}"
-                                                      class="d-inline"
-                                                      onsubmit="return dailyCashConfirmDeleteEntry()">
-                                                    @csrf @method('DELETE')
-                                                    <button class="btn btn-outline-danger py-0 px-2"
-                                                            style="font-size:0.75rem;">
-                                                        <i class="bi bi-trash"></i> Delete
-                                                    </button>
-                                                </form>
-                                            @endif
-                                        </td>
-                                    </tr>
-                                @endforeach
-                                </tbody>
-                                @if(!$loop->last)
-                                <tbody class="daily-cash-sheet-spacer"><tr><td colspan="9"></td></tr></tbody>
-                                @endif
-                                @endif
-                            @endforeach
+                            @include('daily-cash._worksheet-metro-groups', ['sections' => $metroSections])
                         @if($dailyCash->entries->count() > 0)
                         <tfoot class="table-light">
                             <tr class="fw-semibold">
@@ -406,6 +324,8 @@
                                 <td class="text-end">₱{{ number_format($dailyCash->expenses(), 2) }}</td>
                                 <td class="text-end">₱{{ number_format($dailyCash->discretionary(), 2) }}</td>
                                 <td class="text-end">₱{{ number_format($dailyCash->savings(), 2) }}</td>
+                                @php $adjFooter = $dailyCash->adjustment(); @endphp
+                                <td class="text-end {{ $adjFooter < 0 ? 'text-danger' : '' }}">₱{{ number_format($adjFooter, 2) }}</td>
                                 <td class="text-end">₱{{ number_format($dailyCash->totalByType('OTHER'), 2) }}</td>
                                 <td></td>
                             </tr>
@@ -415,6 +335,7 @@
                 </div>
             </div>
         </div>
+
     </div>
 
 </div>
@@ -439,15 +360,18 @@
                             <label class="form-label small fw-bold">Entry group</label>
                             <select id="addEntryGroup" class="form-select form-select-sm" required>
                                 <option value="" selected disabled>— Choose —</option>
-                                <option value="CASH_FROM_BANK">Cash from Bank — Withdrawals</option>
+                                <option value="CASH_FROM_BANK">Cash from Bank — Withdrawals (ledger → Capital)</option>
                                 <option value="CAPITAL">Capital</option>
                                 <option value="INCOME">Income</option>
                                 <option value="EXPENSES">Expenses</option>
                                 <option value="DISCRETIONARY">Discretionary</option>
                                 <option value="SAVINGS">Savings</option>
+                                <option value="ADJUSTMENT">Adjustment (signed ±)</option>
                                 <option value="OTHER">Other</option>
                             </select>
-                            <div class="form-text small">Matches the daily worksheet. Use <strong>Deposit to Bank</strong> (below the summary) when cash leaves the till for the bank.</div>
+                            <div id="addEntryGroupHelpDefault" class="form-text small">
+                                <strong>Cash from Bank — Withdrawals</strong> affects the ledger (<strong>CAPITAL</strong>). <strong>Adjustment</strong> allows negative amounts for reconciling. Use the &quot;Add custom row&quot; link inside any group to name a one-off line for the day.
+                            </div>
                         </div>
                         <div class="col-12 d-none" id="addEntryExpenseBucketWrap">
                             <label class="form-label small fw-bold">Expense section</label>
@@ -477,9 +401,9 @@
                             <input type="text" name="description" id="addEntryDescription" class="form-control form-control-sm"
                                    maxlength="255">
                         </div>
-                        <div class="col-12">
-                            <label class="form-label small fw-bold">Amount (₱)</label>
-                            <input type="number" name="amount" step="0.01" min="0.01"
+                        <div class="col-12" id="addEntryAmountWrap">
+                            <label class="form-label small fw-bold">Amount (₱) <span id="addEntryAmountSignedNote" class="text-muted small d-none">— negatives allowed</span></label>
+                            <input type="number" name="amount" id="addEntryAmountInput" step="0.01" min="0.01"
                                    class="form-control form-control-sm" required>
                         </div>
                     </div>
@@ -755,6 +679,8 @@ function dailyCashAppendLineOption(sel, line) {
     o.value = line.key;
     o.textContent = line.label;
     o.dataset.needsOther = line.needsOther ? '1' : '0';
+    o.dataset.isCustom = line.isCustom ? '1' : '0';
+    o.dataset.type = line.type || '';
     sel.appendChild(o);
 }
 
@@ -833,21 +759,30 @@ function dailyCashSetEditEntryLineLabel(grp) {
 function dailyCashSyncAddOtherDescVisibility() {
     const lineSel = document.getElementById('addEntryLineSelect');
     const keyHidden = document.getElementById('addEntryWorksheetCategoryKey');
+    const typeHidden = document.getElementById('addEntryResolvedType');
     const otherWrap = document.getElementById('addEntryOtherWrap');
     const descWrap = document.getElementById('addEntryDescWrap');
     const otherIn = document.getElementById('addEntryOtherSpecify');
     const descIn = document.getElementById('addEntryDescription');
     const grp = document.getElementById('addEntryGroup').value;
+    const amtInput = document.getElementById('addEntryAmountInput');
+    const amtNote = document.getElementById('addEntryAmountSignedNote');
 
     dailyCashSetAddEntryLineLabel(grp);
 
     if (grp === 'CASH_FROM_BANK' || grp === '' || grp === 'CAPITAL') {
+        dailyCashApplyAmountSignMode(amtInput, amtNote, false);
+        if (typeHidden) typeHidden.value = grp === 'CASH_FROM_BANK' ? 'CASH_FROM_BANK' : grp;
         return;
     }
 
     const opt = lineSel.options[lineSel.selectedIndex];
     const needsOther = opt && opt.dataset.needsOther === '1';
+    const isCustom = opt && opt.dataset.isCustom === '1';
+    const lineType = (opt && opt.dataset.type) ? opt.dataset.type : grp;
     keyHidden.value = lineSel.value || '';
+    if (typeHidden) typeHidden.value = lineType;
+    dailyCashApplyAmountSignMode(amtInput, amtNote, lineType === 'ADJUSTMENT');
 
     otherWrap.classList.toggle('d-none', !needsOther);
     descWrap.classList.toggle('d-none', needsOther);
@@ -857,9 +792,18 @@ function dailyCashSyncAddOtherDescVisibility() {
     descIn.required = needsOther ? false : (grp === 'DISCRETIONARY');
     dailyCashSetAddDescriptionRequireStar(needsOther ? false : (grp === 'DISCRETIONARY'));
 
+    if (otherWrap && needsOther) {
+        const lbl = otherWrap.querySelector('label');
+        if (lbl) {
+            lbl.innerHTML = isCustom
+                ? 'Custom row label <span class="text-danger">*</span>'
+                : 'Specify “Other” <span class="text-danger">*</span>';
+        }
+    }
+
     const discWrap = document.getElementById('addEntryDiscSubWrap');
     const discSel = document.getElementById('addEntryDiscSubcategory');
-    const isDiscOther = grp === 'DISCRETIONARY' && needsOther;
+    const isDiscOther = grp === 'DISCRETIONARY' && needsOther && !isCustom;
     if (discWrap) {
         discWrap.classList.toggle('d-none', !isDiscOther);
     }
@@ -891,6 +835,15 @@ function dailyCashSyncAddEntryForm(options) {
     const descIn = document.getElementById('addEntryDescription');
     const discSubWrapEl = document.getElementById('addEntryDiscSubWrap');
     const discSelReset = document.getElementById('addEntryDiscSubcategory');
+    const amtWrap = document.getElementById('addEntryAmountWrap');
+    const amtInput = document.getElementById('addEntryAmountInput');
+
+    if (amtWrap) amtWrap.classList.remove('d-none');
+    if (amtInput) {
+        amtInput.setAttribute('name', 'amount');
+        amtInput.disabled = false;
+        amtInput.required = true;
+    }
 
     typeHidden.value = grp === 'CASH_FROM_BANK' ? 'CASH_FROM_BANK' : grp;
     keyHidden.value = '';
@@ -939,13 +892,15 @@ function dailyCashSyncAddEntryForm(options) {
         return;
     }
 
-    if (grp === 'DISCRETIONARY' || grp === 'SAVINGS' || grp === 'OTHER') {
+    if (grp === 'DISCRETIONARY' || grp === 'SAVINGS' || grp === 'OTHER' || grp === 'ADJUSTMENT') {
         lineWrap.classList.remove('d-none');
         const buckets = grp === 'DISCRETIONARY'
             ? (meta.discretionary && meta.discretionary.buckets)
             : grp === 'SAVINGS'
                 ? (meta.savings && meta.savings.buckets)
-                : (meta.other && meta.other.buckets);
+                : grp === 'ADJUSTMENT'
+                    ? (meta.adjustment && meta.adjustment.buckets)
+                    : (meta.other && meta.other.buckets);
         dailyCashFillLineBucketsSelect(lineSel, buckets || []);
         dailyCashSyncAddOtherDescVisibility();
         return;
@@ -965,13 +920,93 @@ function dailyCashSyncAddEntryForm(options) {
     }
 }
 
+/** Toggle the amount input between signed (ADJUSTMENT) and positive (everything else). */
+function dailyCashApplyAmountSignMode(amtInput, hintEl, isSigned) {
+    if (!amtInput) return;
+    if (isSigned) {
+        amtInput.removeAttribute('min');
+        amtInput.setAttribute('step', '0.01');
+    } else {
+        amtInput.setAttribute('min', '0.01');
+        amtInput.setAttribute('step', '0.01');
+    }
+    if (hintEl) hintEl.classList.toggle('d-none', !isSigned);
+}
+
+/** Find a worksheet bucket by section_slug across all type-grouped buckets in the meta tree. */
+function dailyCashFindSectionBySlug(slug) {
+    if (!slug) return null;
+    const meta = window.dailyCashWorksheetEntryMeta || {};
+    const groupKeys = ['income', 'expense', 'discretionary', 'savings', 'adjustment', 'other'];
+    for (let g = 0; g < groupKeys.length; g++) {
+        const grp = meta[groupKeys[g]];
+        if (!grp || !grp.buckets) continue;
+        for (let b = 0; b < grp.buckets.length; b++) {
+            if (grp.buckets[b].section_slug === slug) {
+                return { groupKey: groupKeys[g], grpName: (grp.type || ''), bucketIndex: b, bucket: grp.buckets[b] };
+            }
+        }
+    }
+    if (meta.capital && meta.capital.lines) {
+        // capital is a flat lines array; treat it as a single section_slug = 'capital'
+        if (slug === 'capital') {
+            return { groupKey: 'capital', grpName: 'CAPITAL', bucketIndex: 0, bucket: { lines: meta.capital.lines, section_slug: 'capital' } };
+        }
+    }
+    return null;
+}
+
+/** Open the Add Entry modal preselecting the section identified by slug, ready to add a custom row. */
+function dailyCashOpenAddEntryForSection(slug) {
+    const modalEl = document.getElementById('addEntryModal');
+    if (!modalEl) return;
+    const m = new bootstrap.Modal(modalEl);
+    m.show();
+    setTimeout(function () {
+        const found = dailyCashFindSectionBySlug(slug);
+        if (!found) return;
+        const grpSel = document.getElementById('addEntryGroup');
+        const bucketSel = document.getElementById('addExpenseBucket');
+        const lineSel = document.getElementById('addEntryLineSelect');
+        grpSel.value = found.grpName;
+        dailyCashSyncAddEntryForm({ resetInputs: true });
+        if (found.grpName === 'EXPENSES' && bucketSel) {
+            bucketSel.value = String(found.bucketIndex);
+            const meta = window.dailyCashWorksheetEntryMeta || {};
+            dailyCashFillExpenseLinesFromBucket(lineSel, meta, found.bucketIndex);
+            lineSel.disabled = false;
+        }
+        // Pick the "+ Custom row…" option (last in the bucket/section).
+        const opts = Array.from(lineSel.options);
+        const customOpt = opts.reverse().find(function (o) { return o.dataset && o.dataset.isCustom === '1'; });
+        if (customOpt) {
+            lineSel.value = customOpt.value;
+        }
+        dailyCashSyncAddOtherDescVisibility();
+        const otherIn = document.getElementById('addEntryOtherSpecify');
+        if (otherIn) otherIn.focus();
+    }, 80);
+}
+
+function dailyCashAssertAmountNonZeroForAdjustment(amtInput, resolvedType) {
+    if (resolvedType !== 'ADJUSTMENT') return true;
+    const v = parseFloat(amtInput && amtInput.value !== '' ? amtInput.value : 'NaN');
+    if (!isFinite(v) || Math.abs(v) < 0.005) {
+        window.alert('Adjustment amount must not be zero. Use a negative number to deduct.');
+        return false;
+    }
+    return true;
+}
+
 function dailyCashAddEntrySubmit() {
-    if (!dailyCashConfirmCarryImpact()) return false;
     const grp = document.getElementById('addEntryGroup').value;
     if (!grp) {
         window.alert('Choose an entry group.');
         return false;
     }
+
+    if (!dailyCashConfirmCarryImpact()) return false;
+
     if (grp !== 'CASH_FROM_BANK' && grp !== 'CAPITAL') {
         dailyCashSyncAddOtherDescVisibility();
         if (!document.getElementById('addEntryWorksheetCategoryKey').value) {
@@ -991,6 +1026,10 @@ function dailyCashAddEntrySubmit() {
             return false;
         }
     }
+    const resolvedAdd = (document.getElementById('addEntryResolvedType').value || grp);
+    if (!dailyCashAssertAmountNonZeroForAdjustment(document.getElementById('addEntryAmountInput'), resolvedAdd)) {
+        return false;
+    }
     return true;
 }
 
@@ -1006,12 +1045,13 @@ function dailyCashFillEditGroupSelect(sel) {
     sel.innerHTML = '';
     const opts = [
         ['', '— Choose —'],
-        ['CASH_FROM_BANK', 'Cash from Bank — Withdrawals'],
+        ['CASH_FROM_BANK', 'Cash from Bank — Withdrawals (ledger → Capital)'],
         ['CAPITAL', 'Capital'],
         ['INCOME', 'Income'],
         ['EXPENSES', 'Expenses'],
         ['DISCRETIONARY', 'Discretionary'],
         ['SAVINGS', 'Savings'],
+        ['ADJUSTMENT', 'Adjustment (signed ±)'],
         ['OTHER', 'Other'],
     ];
     for (let i = 0; i < opts.length; i++) {
@@ -1026,20 +1066,28 @@ function dailyCashSyncEditOtherDescVisibility() {
     const grp = document.getElementById('editEntryGroup').value;
     const lineSel = document.getElementById('editEntryLineSelect');
     const keyHidden = document.getElementById('editEntryWorksheetCategoryKey');
+    const typeHidden = document.getElementById('editEntryResolvedType');
     const otherWrap = document.getElementById('editEntryOtherWrap');
     const descWrap = document.getElementById('editEntryDescWrap');
     const otherIn = document.getElementById('editEntryOtherSpecify');
     const descIn = document.getElementById('editWsDesc');
+    const amtInput = document.getElementById('editAmount');
 
     dailyCashSetEditEntryLineLabel(grp);
 
     if (grp === 'CASH_FROM_BANK' || grp === '' || grp === 'CAPITAL') {
+        dailyCashApplyAmountSignMode(amtInput, null, false);
+        if (typeHidden) typeHidden.value = grp === 'CASH_FROM_BANK' ? 'CASH_FROM_BANK' : grp;
         return;
     }
 
     const opt = lineSel.options[lineSel.selectedIndex];
     const needsOther = opt && opt.dataset.needsOther === '1';
+    const isCustom = opt && opt.dataset.isCustom === '1';
+    const lineType = (opt && opt.dataset.type) ? opt.dataset.type : grp;
     keyHidden.value = lineSel.value || '';
+    if (typeHidden) typeHidden.value = lineType;
+    dailyCashApplyAmountSignMode(amtInput, null, lineType === 'ADJUSTMENT');
 
     otherWrap.classList.toggle('d-none', !needsOther);
     descWrap.classList.toggle('d-none', needsOther);
@@ -1049,9 +1097,18 @@ function dailyCashSyncEditOtherDescVisibility() {
     descIn.required = needsOther ? false : (grp === 'DISCRETIONARY');
     dailyCashSetEditDescriptionRequireStar(needsOther ? false : (grp === 'DISCRETIONARY'));
 
+    if (otherWrap && needsOther) {
+        const lbl = otherWrap.querySelector('label');
+        if (lbl) {
+            lbl.innerHTML = isCustom
+                ? 'Custom row label <span class="text-danger">*</span>'
+                : 'Specify “Other” <span class="text-danger">*</span>';
+        }
+    }
+
     const discWrap = document.getElementById('editEntryDiscSubWrap');
     const discSel = document.getElementById('editEntryDiscSubcategory');
-    const isDiscOther = grp === 'DISCRETIONARY' && needsOther;
+    const isDiscOther = grp === 'DISCRETIONARY' && needsOther && !isCustom;
     if (discWrap) {
         discWrap.classList.toggle('d-none', !isDiscOther);
     }
@@ -1129,13 +1186,15 @@ function dailyCashSyncEditWorksheetForm(options) {
         return;
     }
 
-    if (grp === 'DISCRETIONARY' || grp === 'SAVINGS' || grp === 'OTHER') {
+    if (grp === 'DISCRETIONARY' || grp === 'SAVINGS' || grp === 'OTHER' || grp === 'ADJUSTMENT') {
         lineWrap.classList.remove('d-none');
         const buckets = grp === 'DISCRETIONARY'
             ? (meta.discretionary && meta.discretionary.buckets)
             : grp === 'SAVINGS'
                 ? (meta.savings && meta.savings.buckets)
-                : (meta.other && meta.other.buckets);
+                : grp === 'ADJUSTMENT'
+                    ? (meta.adjustment && meta.adjustment.buckets)
+                    : (meta.other && meta.other.buckets);
         dailyCashFillLineBucketsSelect(lineSel, buckets || []);
         dailyCashSyncEditOtherDescVisibility();
         return;
@@ -1182,6 +1241,25 @@ function dailyCashPrefillEditWorksheet(isBank, ledgerType, categoryKey, descript
         key = lines[0] ? lines[0].key : '';
     }
 
+    // Custom row: category looks like "custom:<slug>". The entry's actual ledger type stays in `ledgerType`.
+    if (typeof key === 'string' && key.indexOf('custom:') === 0) {
+        const slug = key.slice(7);
+        const found = dailyCashFindSectionBySlug(slug);
+        if (!found) return;
+        grp.value = found.grpName;
+        dailyCashSyncEditWorksheetForm({ resetInputs: false });
+        if (found.grpName === 'EXPENSES' && bucketSel) {
+            bucketSel.value = String(found.bucketIndex);
+            dailyCashFillExpenseLinesFromBucket(lineSel, meta, found.bucketIndex);
+            lineSel.disabled = false;
+        }
+        const customOpt = Array.from(lineSel.options).reverse().find(function (o) { return o.dataset && o.dataset.isCustom === '1'; });
+        if (customOpt) lineSel.value = customOpt.value;
+        dailyCashSyncEditOtherDescVisibility();
+        otherIn.value = description;
+        return;
+    }
+
     const managed = meta.managed_keys || [];
     if (managed.indexOf(key) === -1) {
         return;
@@ -1210,7 +1288,7 @@ function dailyCashPrefillEditWorksheet(isBank, ledgerType, categoryKey, descript
         return;
     }
 
-    if (ledgerType === 'DISCRETIONARY' || ledgerType === 'SAVINGS' || ledgerType === 'OTHER') {
+    if (ledgerType === 'DISCRETIONARY' || ledgerType === 'SAVINGS' || ledgerType === 'OTHER' || ledgerType === 'ADJUSTMENT') {
         const grpVal = ledgerType;
         grp.value = grpVal;
         dailyCashSyncEditWorksheetForm({ resetInputs: false });
@@ -1219,7 +1297,9 @@ function dailyCashPrefillEditWorksheet(isBank, ledgerType, categoryKey, descript
                 ? (meta.discretionary && meta.discretionary.buckets)
                 : grpVal === 'SAVINGS'
                     ? (meta.savings && meta.savings.buckets)
-                    : (meta.other && meta.other.buckets);
+                    : grpVal === 'ADJUSTMENT'
+                        ? (meta.adjustment && meta.adjustment.buckets)
+                        : (meta.other && meta.other.buckets);
         dailyCashFillLineBucketsSelect(lineSel, buckets || []);
         lineSel.value = key;
         if (lineSel.value !== key) {
@@ -1352,7 +1432,7 @@ function editEntry(id, type, description, amount, category, subKey) {
     const meta = window.dailyCashWorksheetEntryMeta || {};
     const managed = meta.managed_keys || [];
     const cat = category ? String(category) : '';
-    const formBank = type === 'INCOME' && cat === 'cash_from_bank';
+    const formBank = cat === 'cash_from_bank';
     const worksheetKey = (type === 'CAPITAL' && cat === '') ? (((meta.capital && meta.capital.lines) || [])[0] || {}).key : cat;
     const useWorksheet = formBank || (worksheetKey && managed.indexOf(worksheetKey) !== -1);
 
@@ -1375,7 +1455,7 @@ function editEntry(id, type, description, amount, category, subKey) {
         dailyCashSetPaneInputsDisabled(legPane, false);
 
         let formType = type;
-        if (type === 'INCOME' && cat === 'cash_from_bank') {
+        if (formBank) {
             formType = 'CASH_FROM_BANK';
         }
         document.getElementById('editLegacyType').value = formType;
@@ -1384,7 +1464,7 @@ function editEntry(id, type, description, amount, category, subKey) {
 
         const bank = formType === 'CASH_FROM_BANK';
         dailyCashSetLegacyClassifyVisibility(bank);
-        const ledgerType = bank ? 'INCOME' : type;
+        const ledgerType = bank ? 'CAPITAL' : type;
         dailyCashFillSubcategorySelect(document.getElementById('editEntrySubcategory'), ledgerType);
         const subEl = document.getElementById('editEntrySubcategory');
         if (subEl) {
@@ -1453,6 +1533,10 @@ function dailyCashEditEntrySubmit() {
                 window.alert('Enter a description for this discretionary entry.');
                 return false;
             }
+        }
+        const resolvedEdit = (document.getElementById('editEntryResolvedType').value || grp);
+        if (!dailyCashAssertAmountNonZeroForAdjustment(document.getElementById('editAmount'), resolvedEdit)) {
+            return false;
         }
     }
     return true;

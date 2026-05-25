@@ -18,6 +18,7 @@ class DailyCashEntry extends Model
         'PURCHASES' => 'Purchases',
         'DISCRETIONARY' => 'Discretionary',
         'SAVINGS' => 'Savings',
+        'ADJUSTMENT' => 'Adjustment',
         'OTHER' => 'Other',
     ];
 
@@ -28,6 +29,7 @@ class DailyCashEntry extends Model
         'PURCHASES' => 'warning',
         'DISCRETIONARY' => 'secondary',
         'SAVINGS' => 'info',
+        'ADJUSTMENT' => 'warning',
         'OTHER' => 'dark',
     ];
 

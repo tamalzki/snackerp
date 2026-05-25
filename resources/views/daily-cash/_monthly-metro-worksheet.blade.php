@@ -100,6 +100,7 @@
                 <th class="text-end amt-col">Expenses</th>
                 <th class="text-end amt-col">Discret.</th>
                 <th class="text-end amt-col">Savings</th>
+                <th class="text-end amt-col">Adjustment</th>
                 <th class="text-end amt-col">Other</th>
             </tr>
         </thead>
@@ -108,7 +109,7 @@
                 $lines = array_values(array_filter($section['lines'] ?? [], fn ($ln) => is_array($ln)));
                 $typeRowspan = count($lines);
                 $parentLabel = DailyCashMetroLedger::parentColumnLabelFromSectionHeading($section['heading'] ?? '');
-                $colSpanSpacer = 8;
+                $colSpanSpacer = 9;
             @endphp
             @if($typeRowspan > 0)
                 <tbody class="daily-cash-sheet-group">
@@ -124,10 +125,15 @@
                             @if($lineIdx === 0)
                                 <td rowspan="{{ $typeRowspan }}" class="sticky-grp ps-3 py-2 align-top text-body">{{ $parentLabel }}</td>
                             @endif
+                            @php
+                                $bankCapMonthly = (float) ($sheetRow['bank_withdrawals_in_capital'] ?? 0);
+                            @endphp
                             <td class="sticky-cat py-2 text-body">
                                 {{ $categoryDisplay }}
-                                @if($lineType === 'INCOME' && ($sheetRow['category_key'] ?? '') === 'cash_from_bank')
-                                    <span class="d-block text-muted mt-1" style="font-size:0.62rem;">Withdrawal</span>
+                                @if($lineType === 'CAPITAL' && abs($bankCapMonthly) > 0.005)
+                                    <span class="d-block text-muted mt-1" style="font-size:0.62rem;">
+                                        Includes cash from bank withdrawals (&#8369;{{ number_format($bankCapMonthly, 2) }})
+                                    </span>
                                 @endif
                             </td>
                             <td class="text-end align-top py-2 amt-col">
@@ -155,6 +161,11 @@
                                     &#8369;{{ number_format($lineAmt, 2) }}
                                 @endif
                             </td>
+                            <td class="text-end align-top py-2 amt-col {{ $pc === 'adjustment' && $lineAmt < 0 ? 'text-danger' : '' }}">
+                                @if($pc === 'adjustment' && $hasAmt)
+                                    &#8369;{{ number_format($lineAmt, 2) }}
+                                @endif
+                            </td>
                             <td class="text-end align-top py-2 amt-col">
                                 @if($pc === 'other' && $hasAmt)
                                     &#8369;{{ number_format($lineAmt, 2) }}
@@ -177,6 +188,8 @@
                 <td class="text-end amt-col">&#8369;{{ number_format((float) ($ft['expenses'] ?? 0), 2) }}</td>
                 <td class="text-end amt-col">&#8369;{{ number_format((float) ($ft['discretionary'] ?? 0), 2) }}</td>
                 <td class="text-end amt-col">&#8369;{{ number_format((float) ($ft['savings'] ?? 0), 2) }}</td>
+                @php $ftAdj = (float) ($ft['adjustment'] ?? 0); @endphp
+                <td class="text-end amt-col {{ $ftAdj < 0 ? 'text-danger' : '' }}">&#8369;{{ number_format($ftAdj, 2) }}</td>
                 <td class="text-end amt-col">&#8369;{{ number_format((float) ($ft['other'] ?? 0), 2) }}</td>
             </tr>
         </tfoot>

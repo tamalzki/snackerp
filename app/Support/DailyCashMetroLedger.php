@@ -47,6 +47,109 @@ final class DailyCashMetroLedger
     /** Stored {@see DailyCashEntry::$category} for discretionary “Others” on the worksheet. */
     public const DISCRETIONARY_METRO_OTHERS_CATEGORY = 'metro_discretionary_others';
 
+    /** Per-day custom row entries store this prefix on {@see DailyCashEntry::$category}, followed by the section slug. */
+    public const CUSTOM_CATEGORY_PREFIX = 'custom:';
+
+    /** Slug for a worksheet section heading (used in custom: keys and meta tree). */
+    public static function sectionSlugFromHeading(string $heading): string
+    {
+        $s = strtolower(trim($heading));
+        $s = preg_replace('/[^a-z0-9]+/', '_', $s);
+
+        return trim((string) $s, '_');
+    }
+
+    /** "custom:<slug>" identifier stored on per-day custom row entries. */
+    public static function customCategoryKeyForSlug(string $sectionSlug): string
+    {
+        return self::CUSTOM_CATEGORY_PREFIX.$sectionSlug;
+    }
+
+    public static function isCustomCategory(?string $category): bool
+    {
+        return is_string($category) && str_starts_with($category, self::CUSTOM_CATEGORY_PREFIX);
+    }
+
+    public static function customCategorySlug(?string $category): ?string
+    {
+        if (! self::isCustomCategory($category)) {
+            return null;
+        }
+
+        return substr((string) $category, strlen(self::CUSTOM_CATEGORY_PREFIX));
+    }
+
+    /**
+     * Walks the metro_daily_sheet config and emits sections (heading + lines + derived slug + primary type).
+     *
+     * @return list<array{heading: string, slug: string, primary_type: string, lines: list<array<string, mixed>>}>
+     */
+    public static function sections(): array
+    {
+        $out = [];
+        $current = null;
+        foreach (self::sheetDefinition() as $row) {
+            $kind = $row['kind'] ?? '';
+            if ($kind === 'heading') {
+                if ($current !== null) {
+                    $out[] = $current;
+                }
+                $heading = (string) ($row['title'] ?? '');
+                $current = [
+                    'heading' => $heading,
+                    'slug' => self::sectionSlugFromHeading($heading),
+                    'primary_type' => '',
+                    'lines' => [],
+                ];
+
+                continue;
+            }
+            if ($kind === 'line' && $current !== null) {
+                $current['lines'][] = $row;
+            }
+        }
+        if ($current !== null) {
+            $out[] = $current;
+        }
+
+        foreach ($out as &$section) {
+            $section['primary_type'] = self::primaryTypeForLines($section['lines']);
+        }
+        unset($section);
+
+        return $out;
+    }
+
+    /**
+     * Pick the section's "main" ledger type for custom rows: most frequent non-ADJUSTMENT type,
+     * falling back to ADJUSTMENT if every line is an adjustment.
+     *
+     * @param  list<array<string, mixed>>  $lines
+     */
+    private static function primaryTypeForLines(array $lines): string
+    {
+        $counts = [];
+        foreach ($lines as $line) {
+            $t = (string) ($line['type'] ?? '');
+            if ($t === '' || $t === 'ADJUSTMENT') {
+                continue;
+            }
+            $counts[$t] = ($counts[$t] ?? 0) + 1;
+        }
+        if ($counts !== []) {
+            arsort($counts);
+
+            return (string) array_key_first($counts);
+        }
+        foreach ($lines as $line) {
+            if (($line['type'] ?? '') === 'ADJUSTMENT') {
+                return 'ADJUSTMENT';
+            }
+        }
+
+        return 'OTHER';
+    }
+
     /** Income “Others” or any expense / other line whose key ends with `_others` (not discretionary). */
     public static function isMetroOthersCategory(?string $categoryKey): bool
     {
@@ -106,7 +209,50 @@ final class DailyCashMetroLedger
     }
 
     /**
-     * JSON-safe tree for Add/Edit Entry modals (worksheet drill-down).
+     * Worksheet CAPITAL line match: per stored category, plus legacy rows on the “cash from bank” line.
+     * Uncategorized CAPITAL posts to the {@see capital_contribution} (Cash on hand) line.
+     */
+    public static function entryMatchesCapitalWorksheetCategory(DailyCashEntry $e, string $categoryKey): bool
+    {
+        if ($categoryKey === DailyCashflowCategories::CASH_FROM_BANK) {
+            return ($e->category ?? '') === DailyCashflowCategories::CASH_FROM_BANK
+                && (($e->type ?? '') === 'CAPITAL' || ($e->type ?? '') === 'INCOME');
+        }
+
+        if (($e->type ?? '') !== 'CAPITAL') {
+            return false;
+        }
+
+        $cat = (string) ($e->category ?? '');
+
+        if ($cat === $categoryKey) {
+            return true;
+        }
+
+        return $categoryKey === 'capital_contribution' && $cat === '';
+    }
+
+    /**
+     * Footnote amount on the “Cash from bank” worksheet line (withdrawals tag).
+     *
+     * @param  Collection<int, DailyCashEntry>  $matches
+     */
+    private static function bankWithdrawalsNoteAmount(string $worksheetCapitalCategoryKey, Collection $matches): float
+    {
+        if ($worksheetCapitalCategoryKey !== DailyCashflowCategories::CASH_FROM_BANK) {
+            return 0.0;
+        }
+
+        return round((float) $matches
+            ->filter(fn (DailyCashEntry $e) => ($e->category ?? '') === DailyCashflowCategories::CASH_FROM_BANK)
+            ->sum('amount'), 2);
+    }
+
+    /**
+     * JSON-safe tree for Add/Edit Entry modals (worksheet drill-down). Each line carries its
+     * declared ledger type so per-group Adjustments rows resolve to ADJUSTMENT regardless of
+     * which group dropdown the user picked. A synthetic "+ Custom row" entry is appended to
+     * every bucket so users can name their own line on the fly.
      *
      * @return array<string, mixed>
      */
@@ -117,62 +263,59 @@ final class DailyCashMetroLedger
         $expenseBuckets = [];
         $discretionaryBuckets = [];
         $savingsBuckets = [];
+        $adjustmentBuckets = [];
         $otherBuckets = [];
-        $currentHeading = '';
 
-        foreach (self::sheetDefinition() as $row) {
-            if (($row['kind'] ?? '') === 'heading') {
-                $currentHeading = (string) ($row['title'] ?? '');
+        foreach (self::sections() as $section) {
+            $heading = $section['heading'];
+            $slug = $section['slug'];
+            $primaryType = $section['primary_type'];
+            $customLine = self::syntheticCustomLine($slug, $primaryType);
 
-                continue;
+            $linesByType = [
+                'CAPITAL' => [],
+                'INCOME' => [],
+                'EXPENSES' => [],
+                'DISCRETIONARY' => [],
+                'SAVINGS' => [],
+                'ADJUSTMENT' => [],
+                'OTHER' => [],
+            ];
+            foreach ($section['lines'] as $row) {
+                $type = (string) $row['type'];
+                $key = (string) $row['category_key'];
+                $label = (string) ($row['category_display'] ?? $row['label'] ?? $key);
+                $linesByType[$type][] = [
+                    'key' => $key,
+                    'label' => $label,
+                    'type' => $type,
+                    'needsOther' => self::worksheetNeedsSpecifyOtherField($key),
+                    'isCustom' => false,
+                ];
             }
-            if (($row['kind'] ?? '') !== 'line') {
-                continue;
+
+            $capitalSubset = $linesByType['CAPITAL'];
+            if ($primaryType === 'CAPITAL') {
+                $capitalSubset[] = $customLine;
             }
+            $capitalLines = array_merge($capitalLines, $capitalSubset);
 
-            $type = (string) $row['type'];
-            $key = (string) $row['category_key'];
-            $label = (string) ($row['category_display'] ?? $row['label'] ?? $key);
-            $needsOther = self::worksheetNeedsSpecifyOtherField($key);
-            $line = ['key' => $key, 'label' => $label, 'needsOther' => $needsOther];
+            self::pushBucket($incomeBuckets, $heading, $slug, 'INCOME', $linesByType['INCOME'], $primaryType, $customLine);
+            self::pushBucket($expenseBuckets, $heading, $slug, 'EXPENSES', $linesByType['EXPENSES'], $primaryType, $customLine);
+            self::pushBucket($discretionaryBuckets, $heading, $slug, 'DISCRETIONARY', $linesByType['DISCRETIONARY'], $primaryType, $customLine);
+            self::pushBucket($savingsBuckets, $heading, $slug, 'SAVINGS', $linesByType['SAVINGS'], $primaryType, $customLine);
+            self::pushBucket($otherBuckets, $heading, $slug, 'OTHER', $linesByType['OTHER'], $primaryType, $customLine);
 
-            if ($type === 'CAPITAL') {
-                $capitalLines[] = $line;
-            } elseif ($type === 'INCOME') {
-                $n = count($incomeBuckets);
-                if ($n === 0 || ($incomeBuckets[$n - 1]['heading'] ?? '') !== $currentHeading) {
-                    $incomeBuckets[] = ['heading' => $currentHeading !== '' ? $currentHeading : 'Income', 'lines' => [$line]];
-                } else {
-                    $incomeBuckets[$n - 1]['lines'][] = $line;
-                }
-            } elseif ($type === 'EXPENSES') {
-                $n = count($expenseBuckets);
-                if ($n === 0 || ($expenseBuckets[$n - 1]['heading'] ?? '') !== $currentHeading) {
-                    $expenseBuckets[] = ['heading' => $currentHeading !== '' ? $currentHeading : 'Expense', 'lines' => [$line]];
-                } else {
-                    $expenseBuckets[$n - 1]['lines'][] = $line;
-                }
-            } elseif ($type === 'DISCRETIONARY') {
-                $n = count($discretionaryBuckets);
-                if ($n === 0 || ($discretionaryBuckets[$n - 1]['heading'] ?? '') !== $currentHeading) {
-                    $discretionaryBuckets[] = ['heading' => $currentHeading !== '' ? $currentHeading : 'Discretionary', 'lines' => [$line]];
-                } else {
-                    $discretionaryBuckets[$n - 1]['lines'][] = $line;
-                }
-            } elseif ($type === 'SAVINGS') {
-                $n = count($savingsBuckets);
-                if ($n === 0 || ($savingsBuckets[$n - 1]['heading'] ?? '') !== $currentHeading) {
-                    $savingsBuckets[] = ['heading' => $currentHeading !== '' ? $currentHeading : 'Savings', 'lines' => [$line]];
-                } else {
-                    $savingsBuckets[$n - 1]['lines'][] = $line;
-                }
-            } elseif ($type === 'OTHER') {
-                $n = count($otherBuckets);
-                if ($n === 0 || ($otherBuckets[$n - 1]['heading'] ?? '') !== $currentHeading) {
-                    $otherBuckets[] = ['heading' => $currentHeading !== '' ? $currentHeading : 'Other', 'lines' => [$line]];
-                } else {
-                    $otherBuckets[$n - 1]['lines'][] = $line;
-                }
+            $adjLines = $linesByType['ADJUSTMENT'];
+            if ($primaryType === 'ADJUSTMENT') {
+                $adjLines[] = $customLine;
+            }
+            if ($adjLines !== []) {
+                $adjustmentBuckets[] = [
+                    'heading' => $heading !== '' ? $heading : 'Adjustments',
+                    'section_slug' => $slug,
+                    'lines' => $adjLines,
+                ];
             }
         }
 
@@ -183,7 +326,41 @@ final class DailyCashMetroLedger
             'expense' => ['type' => 'EXPENSES', 'buckets' => $expenseBuckets],
             'discretionary' => ['type' => 'DISCRETIONARY', 'buckets' => $discretionaryBuckets],
             'savings' => ['type' => 'SAVINGS', 'buckets' => $savingsBuckets],
+            'adjustment' => ['type' => 'ADJUSTMENT', 'buckets' => $adjustmentBuckets],
             'other' => ['type' => 'OTHER', 'buckets' => $otherBuckets],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $buckets
+     * @param  list<array<string, mixed>>  $lines
+     * @param  array<string, mixed>  $customLine
+     */
+    private static function pushBucket(array &$buckets, string $heading, string $slug, string $type, array $lines, string $primaryType, array $customLine): void
+    {
+        if ($primaryType === $type) {
+            $lines[] = $customLine;
+        }
+        if ($lines === []) {
+            return;
+        }
+        $buckets[] = [
+            'heading' => $heading !== '' ? $heading : ucfirst(strtolower($type)),
+            'section_slug' => $slug,
+            'lines' => $lines,
+        ];
+    }
+
+    /** @return array{key: string, label: string, type: string, needsOther: bool, isCustom: bool, section_slug: string} */
+    private static function syntheticCustomLine(string $sectionSlug, string $primaryType): array
+    {
+        return [
+            'key' => self::customCategoryKeyForSlug($sectionSlug),
+            'label' => '+ Custom row…',
+            'type' => $primaryType,
+            'needsOther' => true,
+            'isCustom' => true,
+            'section_slug' => $sectionSlug,
         ];
     }
 
@@ -220,8 +397,10 @@ final class DailyCashMetroLedger
     public static function nonMetroEntries(DailyCashDay $day): Collection
     {
         return $day->entries->filter(function (DailyCashEntry $e) {
-            // Worksheet "Capital" row aggregates every CAPITAL entry (category optional).
-            if ($e->type === 'CAPITAL') {
+            if (self::entryBelongsToMetroCapitalPool($e)) {
+                return false;
+            }
+            if (self::isCustomCategory($e->category)) {
                 return false;
             }
 
@@ -231,56 +410,88 @@ final class DailyCashMetroLedger
 
     /**
      * Build rows for the daily worksheet table (headings + lines with totals).
+     * Per-day custom rows ("custom:<section_slug>" entries) are emitted at the bottom of their section.
      *
      * @return list<array<string, mixed>>
      */
     public static function buildSheetRows(DailyCashDay $day): array
     {
         $built = [];
-        foreach (self::sheetDefinition() as $row) {
-            $kind = $row['kind'] ?? '';
-            if ($kind === 'heading') {
-                $built[] = [
-                    'kind' => 'heading',
-                    'title' => (string) ($row['title'] ?? ''),
-                ];
-
-                continue;
-            }
-            if ($kind !== 'line') {
-                continue;
-            }
-
-            $type = (string) $row['type'];
-            $categoryKey = (string) $row['category_key'];
-            $categoryDisplay = (string) ($row['category_display'] ?? $row['label'] ?? $categoryKey);
-
-            $matches = $type === 'CAPITAL'
-                ? $day->entries->filter(fn (DailyCashEntry $e) => $e->type === 'CAPITAL')->sortBy('id')->values()
-                : $day->entries
-                    ->filter(fn (DailyCashEntry $e) => $e->type === $type && $e->category === $categoryKey)
-                    ->sortBy('id')
-                    ->values();
-
-            $amount = (float) $matches->sum('amount');
-            $representative = $matches->first(function (DailyCashEntry $e) {
-                return abs((float) $e->amount) > 0.005;
-            }) ?? $matches->first();
-
-            $displayLabel = self::worksheetUsesOthersAggregateLabel($categoryKey)
-                ? self::aggregatedOthersCategoryLabel($categoryDisplay, $matches)
-                : $categoryDisplay;
+        foreach (self::sections() as $section) {
+            $heading = $section['heading'];
+            $sectionSlug = $section['slug'];
+            $primaryType = $section['primary_type'];
 
             $built[] = [
-                'kind' => 'line',
-                'type' => $type,
-                'category_key' => $categoryKey,
-                'category_display' => $displayLabel,
-                'type_word' => self::worksheetTypeWord($type),
-                'amount' => $amount,
-                'entry_count' => $matches->count(),
-                'representative_entry' => $representative,
+                'kind' => 'heading',
+                'title' => $heading,
             ];
+
+            foreach ($section['lines'] as $row) {
+                $type = (string) $row['type'];
+                $categoryKey = (string) $row['category_key'];
+                $categoryDisplay = (string) ($row['category_display'] ?? $row['label'] ?? $categoryKey);
+
+                $matches = $type === 'CAPITAL'
+                    ? $day->entries
+                        ->filter(fn (DailyCashEntry $e) => self::entryMatchesCapitalWorksheetCategory($e, $categoryKey))
+                        ->sortBy('id')
+                        ->values()
+                    : $day->entries
+                        ->filter(fn (DailyCashEntry $e) => $e->type === $type && $e->category === $categoryKey)
+                        ->sortBy('id')
+                        ->values();
+
+                $amount = (float) $matches->sum('amount');
+                $representative = $matches->first(function (DailyCashEntry $e) {
+                    return abs((float) $e->amount) > 0.005;
+                }) ?? $matches->first();
+
+                $displayLabel = self::worksheetUsesOthersAggregateLabel($categoryKey)
+                    ? self::aggregatedOthersCategoryLabel($categoryDisplay, $matches)
+                    : $categoryDisplay;
+
+                $built[] = [
+                    'kind' => 'line',
+                    'type' => $type,
+                    'category_key' => $categoryKey,
+                    'category_display' => $displayLabel,
+                    'type_word' => self::worksheetTypeWord($type),
+                    'amount' => $amount,
+                    'entry_count' => $matches->count(),
+                    'representative_entry' => $representative,
+                    'bank_withdrawals_in_capital' => $type === 'CAPITAL'
+                        ? self::bankWithdrawalsNoteAmount($categoryKey, $matches)
+                        : 0.0,
+                    'is_custom' => false,
+                    'section_slug' => $sectionSlug,
+                ];
+            }
+
+            $customKey = self::customCategoryKeyForSlug($sectionSlug);
+            $customEntries = $day->entries
+                ->filter(fn (DailyCashEntry $e) => (string) ($e->category ?? '') === $customKey)
+                ->sortBy('id')
+                ->values();
+
+            foreach ($customEntries as $entry) {
+                $entryType = (string) ($entry->type ?? $primaryType);
+                $built[] = [
+                    'kind' => 'line',
+                    'type' => $entryType,
+                    'category_key' => $customKey,
+                    'category_display' => (string) ($entry->description !== null && $entry->description !== ''
+                        ? $entry->description
+                        : 'Custom row'),
+                    'type_word' => self::worksheetTypeWord($entryType),
+                    'amount' => (float) $entry->amount,
+                    'entry_count' => 1,
+                    'representative_entry' => $entry,
+                    'bank_withdrawals_in_capital' => 0.0,
+                    'is_custom' => true,
+                    'section_slug' => $sectionSlug,
+                ];
+            }
         }
 
         return $built;
@@ -340,6 +551,9 @@ final class DailyCashMetroLedger
                 'type_word' => self::worksheetTypeWord($type),
                 'primary_amount_column' => self::primaryAmountColumn($type),
                 'amount' => $amount,
+                'bank_withdrawals_in_capital' => $type === 'CAPITAL'
+                    ? self::bankWithdrawalsNoteAmount($categoryKey, $monthMatches)
+                    : 0.0,
             ];
         }
 
@@ -354,6 +568,7 @@ final class DailyCashMetroLedger
             'expenses' => round((float) $t['expenses'], 2),
             'discretionary' => round((float) $t['discretionary'], 2),
             'savings' => round((float) $t['savings'], 2),
+            'adjustment' => round((float) $t['adjustment'], 2),
             'other' => round((float) $t['other'], 2),
         ];
         $monthNet = round((float) $t['net'], 2);
@@ -378,7 +593,7 @@ final class DailyCashMetroLedger
      */
     public static function buildAnnualCashflowGrid(int $year): array
     {
-        $cols = ['income', 'expense', 'discretionary', 'savings'];
+        $cols = ['income', 'expense', 'discretionary', 'savings', 'adjustment'];
 
         $entries = DailyCashEntry::query()
             ->with('day')
@@ -440,6 +655,9 @@ final class DailyCashMetroLedger
                 'primary_amount_column' => $primaryCol,
                 'months' => $monthsData,
                 'row_total' => round($rowSum, 2),
+                'bank_withdrawals_in_capital' => $type === 'CAPITAL'
+                    ? self::bankWithdrawalsNoteAmount($categoryKey, $yearMatches)
+                    : 0.0,
             ];
         }
 
@@ -460,6 +678,7 @@ final class DailyCashMetroLedger
                 'expense' => round((float) $t['expenses'] + (float) $t['other'], 2),
                 'discretionary' => round((float) $t['discretionary'], 2),
                 'savings' => round((float) $t['savings'], 2),
+                'adjustment' => round((float) $t['adjustment'], 2),
             ];
             foreach ($totalsMonths[$m] as $v) {
                 $grandSum += $v;
@@ -474,6 +693,7 @@ final class DailyCashMetroLedger
                 ['key' => 'expense', 'label' => 'Expense'],
                 ['key' => 'discretionary', 'label' => 'Disc.'],
                 ['key' => 'savings', 'label' => 'Savings'],
+                ['key' => 'adjustment', 'label' => 'Adjust.'],
             ],
             'sections' => $sections,
             'totals_row' => [
@@ -492,6 +712,7 @@ final class DailyCashMetroLedger
             'EXPENSES', 'PURCHASES', 'OTHER' => 'expense',
             'DISCRETIONARY' => 'discretionary',
             'SAVINGS' => 'savings',
+            'ADJUSTMENT' => 'adjustment',
             default => 'expense',
         };
     }
@@ -511,7 +732,7 @@ final class DailyCashMetroLedger
                 return false;
             }
             if ($type === 'CAPITAL') {
-                return $e->type === 'CAPITAL';
+                return self::entryMatchesCapitalWorksheetCategory($e, $categoryKey);
             }
 
             return $e->type === $type && $e->category === $categoryKey;
@@ -520,19 +741,35 @@ final class DailyCashMetroLedger
 
     /**
      * @param  Collection<int, DailyCashEntry>  $entries
-     * @return array{capital: float, income: float, expenses: float, discretionary: float, savings: float, other: float, net: float}
+     * @return array{capital: float, income: float, expenses: float, discretionary: float, savings: float, other: float, adjustment: float, net: float}
      */
     private static function totalsForEntries(Collection $entries): array
     {
-        $capital = (float) $entries->where('type', 'CAPITAL')->sum('amount');
-        $income = (float) $entries->where('type', 'INCOME')->sum('amount');
+        $capital = (float) $entries
+            ->filter(fn (DailyCashEntry $e) => self::entryBelongsToMetroCapitalPool($e))
+            ->sum('amount');
+        $income = (float) $entries
+            ->where('type', 'INCOME')
+            ->filter(fn (DailyCashEntry $e) => ($e->category ?? '') !== DailyCashflowCategories::CASH_FROM_BANK)
+            ->sum('amount');
         $expenses = (float) $entries->whereIn('type', ['EXPENSES', 'PURCHASES'])->sum('amount');
         $discretionary = (float) $entries->where('type', 'DISCRETIONARY')->sum('amount');
         $savings = (float) $entries->where('type', 'SAVINGS')->sum('amount');
         $other = (float) $entries->where('type', 'OTHER')->sum('amount');
-        $net = $capital + $income - $expenses - $discretionary - $savings - $other;
+        $adjustment = (float) $entries->where('type', 'ADJUSTMENT')->sum('amount');
+        $net = $capital + $income - $expenses - $discretionary - $savings - $other + $adjustment;
 
-        return compact('capital', 'income', 'expenses', 'discretionary', 'savings', 'other') + ['net' => $net];
+        return compact('capital', 'income', 'expenses', 'discretionary', 'savings', 'other', 'adjustment') + ['net' => $net];
+    }
+
+    private static function entryBelongsToMetroCapitalPool(DailyCashEntry $e): bool
+    {
+        if (($e->type ?? '') === 'CAPITAL') {
+            return true;
+        }
+
+        return ($e->type ?? '') === 'INCOME'
+            && (($e->category ?? '') === DailyCashflowCategories::CASH_FROM_BANK);
     }
 
     /** Left-column group label: matches worksheet section heading (e.g. INCOME: ASSORTED). */
@@ -555,6 +792,7 @@ final class DailyCashMetroLedger
             'EXPENSES', 'PURCHASES' => 'Expense',
             'DISCRETIONARY' => 'Discretionary',
             'SAVINGS' => 'Savings',
+            'ADJUSTMENT' => 'Adjustment',
             'OTHER' => 'Other',
             default => $ledgerType,
         };
@@ -569,6 +807,7 @@ final class DailyCashMetroLedger
             'EXPENSES', 'PURCHASES' => 'expenses',
             'DISCRETIONARY' => 'discretionary',
             'SAVINGS' => 'savings',
+            'ADJUSTMENT' => 'adjustment',
             'OTHER' => 'other',
             default => 'other',
         };

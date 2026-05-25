@@ -165,7 +165,7 @@ final class DailyCashflowCategories
         }
 
         if ($category === self::CASH_FROM_BANK) {
-            return $type === 'INCOME';
+            return $type === 'INCOME' || $type === 'CAPITAL';
         }
 
         if (str_starts_with($category, 'income:')) {

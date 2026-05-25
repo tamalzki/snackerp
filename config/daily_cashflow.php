@@ -85,13 +85,26 @@ return [
             'savings_investment' => 'Savings / investment (reporting)',
         ],
         'CAPITAL' => [
-            'capital_contribution' => 'Capital',
+            'capital_contribution' => 'Cash',
+            'cash_from_bank' => 'Cash from bank — withdrawals',
+            'metro_capital_cfb_loan' => 'Loan',
+            'metro_capital_cfb_others' => 'Others',
         ],
 
         /** Metro daily worksheet rows (stored on category, type OTHER). */
         'OTHER' => [
             'metro_other_misc' => 'Miscellaneous',
             'metro_other_others' => 'Others',
+        ],
+
+        /** Adjustment lines on the daily worksheet (per-group reconciliation + standalone group). Amounts may be negative. */
+        'ADJUSTMENT' => [
+            'adj_income_assorted' => 'Income: Assorted — Adjustments',
+            'adj_exp_assorted' => 'Expense: Assorted — Adjustments',
+            'adj_exp_water' => 'Expense: Water — Adjustments',
+            'adj_exp_farm' => 'Expense: Farm — Adjustments',
+            'adj_exp_suman' => 'Expense: Suman — Adjustments',
+            'adj_others' => 'Adjustments — Others',
         ],
     ],
 
@@ -231,10 +244,20 @@ return [
         ],
         'CAPITAL' => [
             [
-                'key' => 'capital_main',
-                'label' => 'Capital',
+                'key' => 'capital_cash',
+                'label' => 'Capital — Cash',
                 'category_value' => 'capital_contribution',
                 'subcategory_keys' => ['capital_contribution'],
+            ],
+            [
+                'key' => 'capital_from_bank_line',
+                'label' => 'Capital — Cash from bank',
+                'category_value' => 'cash_from_bank',
+                'subcategory_keys' => [
+                    'cash_from_bank',
+                    'metro_capital_cfb_loan',
+                    'metro_capital_cfb_others',
+                ],
             ],
         ],
     ],
@@ -287,10 +310,15 @@ return [
         ],
 
         'CAPITAL' => [
-            ['key' => 'capital_contribution', 'label' => 'Capital contribution', 'keywords' => ['capital', 'cash in', 'owner investment', 'additional capital']],
+            ['key' => 'capital_contribution', 'label' => 'Cash', 'keywords' => ['capital', 'cash on hand', 'owner investment', 'till']],
+            ['key' => 'cash_from_bank', 'label' => 'Cash from bank — withdrawals', 'keywords' => ['atm withdrawal', 'bank withdrawal', 'cash from bank']],
+            ['key' => 'metro_capital_cfb_loan', 'label' => 'Loan', 'keywords' => ['loan draw', 'bank loan']],
+            ['key' => 'metro_capital_cfb_others', 'label' => 'Others', 'keywords' => ['capital other', 'cfb other']],
         ],
 
         'OTHER' => [],
+
+        'ADJUSTMENT' => [],
     ],
 
     /*
@@ -304,13 +332,17 @@ return [
     */
     'metro_daily_sheet' => [
         ['kind' => 'heading', 'title' => 'CAPITAL'],
-        ['kind' => 'line', 'type' => 'CAPITAL', 'category_key' => 'capital_contribution', 'category_display' => 'Capital'],
+        ['kind' => 'line', 'type' => 'CAPITAL', 'category_key' => 'capital_contribution', 'category_display' => 'Cash'],
+        ['kind' => 'line', 'type' => 'CAPITAL', 'category_key' => 'cash_from_bank', 'category_display' => 'Cash from bank — withdrawals'],
+        ['kind' => 'line', 'type' => 'CAPITAL', 'category_key' => 'metro_capital_cfb_loan', 'category_display' => 'Loan'],
+        ['kind' => 'line', 'type' => 'CAPITAL', 'category_key' => 'metro_capital_cfb_others', 'category_display' => 'Others'],
 
         ['kind' => 'heading', 'title' => 'INCOME: ASSORTED'],
         ['kind' => 'line', 'type' => 'INCOME', 'category_key' => 'metro_income_suman', 'category_display' => 'Suman'],
         ['kind' => 'line', 'type' => 'INCOME', 'category_key' => 'income_water', 'category_display' => 'Water'],
         ['kind' => 'line', 'type' => 'INCOME', 'category_key' => 'income_farm', 'category_display' => 'Farm'],
         ['kind' => 'line', 'type' => 'INCOME', 'category_key' => 'metro_income_others', 'category_display' => 'Others'],
+        ['kind' => 'line', 'type' => 'ADJUSTMENT', 'category_key' => 'adj_income_assorted', 'category_display' => 'Adjustments'],
 
         ['kind' => 'heading', 'title' => 'EXPENSE: ASSORTED'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_assorted_ingredients', 'category_display' => 'Ingredients'],
@@ -321,6 +353,7 @@ return [
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_assorted_repair_maintenance', 'category_display' => 'Repair and Maintenance'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_assorted_label_packaging', 'category_display' => 'Label & Packaging'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_assorted_others', 'category_display' => 'Others'],
+        ['kind' => 'line', 'type' => 'ADJUSTMENT', 'category_key' => 'adj_exp_assorted', 'category_display' => 'Adjustments'],
 
         ['kind' => 'heading', 'title' => 'EXPENSE: WATER'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_water_supplies', 'category_display' => 'Supplies'],
@@ -328,17 +361,20 @@ return [
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_water_electricity_water', 'category_display' => 'Electricity & Water'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_water_salaries_wages', 'category_display' => 'Salary & Wages'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_water_others', 'category_display' => 'Others'],
+        ['kind' => 'line', 'type' => 'ADJUSTMENT', 'category_key' => 'adj_exp_water', 'category_display' => 'Adjustments'],
 
         ['kind' => 'heading', 'title' => 'EXPENSE: FARM'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_farm_seedlings', 'category_display' => 'Seedlings'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_farm_fertilizers', 'category_display' => 'Fertilizers / Herbicide'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_farm_others', 'category_display' => 'Others'],
+        ['kind' => 'line', 'type' => 'ADJUSTMENT', 'category_key' => 'adj_exp_farm', 'category_display' => 'Adjustments'],
 
         ['kind' => 'heading', 'title' => 'EXPENSE: SUMAN'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_suman_suman', 'category_display' => 'Suman'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_suman_water', 'category_display' => 'Water'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_suman_farm', 'category_display' => 'Farm'],
         ['kind' => 'line', 'type' => 'EXPENSES', 'category_key' => 'metro_exp_suman_others', 'category_display' => 'Others'],
+        ['kind' => 'line', 'type' => 'ADJUSTMENT', 'category_key' => 'adj_exp_suman', 'category_display' => 'Adjustments'],
 
         ['kind' => 'heading', 'title' => 'DISCRETIONARY'],
         ['kind' => 'line', 'type' => 'DISCRETIONARY', 'category_key' => 'dining_out', 'category_display' => 'Dining out'],
@@ -352,6 +388,9 @@ return [
         ['kind' => 'heading', 'title' => 'SAVINGS'],
         ['kind' => 'line', 'type' => 'SAVINGS', 'category_key' => 'cash_bank_investment', 'category_display' => 'Cash in bank / savings / investment'],
         ['kind' => 'line', 'type' => 'SAVINGS', 'category_key' => 'savings_investment', 'category_display' => 'Savings / investment'],
+
+        ['kind' => 'heading', 'title' => 'ADJUSTMENTS'],
+        ['kind' => 'line', 'type' => 'ADJUSTMENT', 'category_key' => 'adj_others', 'category_display' => 'Others'],
 
         ['kind' => 'heading', 'title' => 'OTHER'],
         ['kind' => 'line', 'type' => 'OTHER', 'category_key' => 'metro_other_misc', 'category_display' => 'Miscellaneous'],
