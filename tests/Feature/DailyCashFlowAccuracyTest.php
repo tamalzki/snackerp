@@ -336,6 +336,97 @@ class DailyCashFlowAccuracyTest extends TestCase
         $this->assertSame(0.0, $ts);
     }
 
+    public function test_monthly_sheet_surfaces_custom_rows_and_adjustments(): void
+    {
+        $day = DailyCashDay::create(['date' => '2026-08-15', 'opening_balance' => 0]);
+        DailyCashEntry::create([
+            'daily_cash_day_id' => $day->id,
+            'type' => 'EXPENSES',
+            'category' => 'custom:expense_water',
+            'description' => 'CHLORINE TABLETS',
+            'amount' => 80,
+            'sort_order' => 1,
+        ]);
+        DailyCashEntry::create([
+            'daily_cash_day_id' => $day->id,
+            'type' => 'ADJUSTMENT',
+            'category' => 'adj_income_assorted',
+            'description' => 'CASH OVERAGE',
+            'amount' => -25,
+            'sort_order' => 2,
+        ]);
+
+        $matrix = DailyCashMetroLedger::buildMonthlyMetroSheetForMonth(2026, 8);
+
+        $customLine = null;
+        $adjLine = null;
+        foreach ($matrix['sections'] as $sec) {
+            foreach ($sec['lines'] ?? [] as $ln) {
+                if (($ln['category_key'] ?? '') === 'custom:expense_water' && ($ln['is_custom'] ?? false)) {
+                    $customLine = $ln;
+                }
+                if (($ln['category_key'] ?? '') === 'adj_income_assorted') {
+                    $adjLine = $ln;
+                }
+            }
+        }
+
+        $this->assertNotNull($customLine, 'custom row should appear under expense:water');
+        $this->assertSame(80.0, (float) $customLine['amount']);
+        $this->assertSame('CHLORINE TABLETS', $customLine['category_display']);
+
+        $this->assertNotNull($adjLine, 'per-group adjustments row should appear');
+        $this->assertSame(-25.0, (float) $adjLine['amount']);
+
+        $this->assertSame(-25.0, $matrix['footer_totals']['adjustment']);
+        $this->assertSame(80.0, $matrix['footer_totals']['expenses']);
+    }
+
+    public function test_annual_grid_surfaces_custom_rows_in_correct_month_cell(): void
+    {
+        $day = DailyCashDay::create(['date' => '2026-04-12', 'opening_balance' => 0]);
+        DailyCashEntry::create([
+            'daily_cash_day_id' => $day->id,
+            'type' => 'INCOME',
+            'category' => 'custom:income_assorted',
+            'description' => 'CONSIGNMENT RETURN',
+            'amount' => 150,
+            'sort_order' => 1,
+        ]);
+        DailyCashEntry::create([
+            'daily_cash_day_id' => $day->id,
+            'type' => 'ADJUSTMENT',
+            'category' => 'adj_exp_assorted',
+            'description' => 'COUNT FIX',
+            'amount' => -10,
+            'sort_order' => 2,
+        ]);
+
+        $grid = DailyCashMetroLedger::buildAnnualCashflowGrid(2026);
+
+        $customLine = null;
+        $adjLine = null;
+        foreach ($grid['sections'] as $sec) {
+            foreach ($sec['lines'] ?? [] as $ln) {
+                if (($ln['category_key'] ?? '') === 'custom:income_assorted' && ($ln['is_custom'] ?? false)) {
+                    $customLine = $ln;
+                }
+                if (($ln['category_key'] ?? '') === 'adj_exp_assorted') {
+                    $adjLine = $ln;
+                }
+            }
+        }
+
+        $this->assertNotNull($customLine, 'annual grid should include custom row');
+        $this->assertSame(150.0, (float) $customLine['months'][4]['income']);
+        $this->assertSame(150.0, (float) $customLine['row_total']);
+
+        $this->assertNotNull($adjLine);
+        $this->assertSame(-10.0, (float) $adjLine['months'][4]['adjustment']);
+
+        $this->assertSame(-10.0, (float) ($grid['totals_row']['months'][4]['adjustment'] ?? 0));
+    }
+
     public function test_purchases_type_counts_as_expense_like_expenses(): void
     {
         $day = DailyCashDay::create(['date' => '2026-10-01', 'opening_balance' => 0]);

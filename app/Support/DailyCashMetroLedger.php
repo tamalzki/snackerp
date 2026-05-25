@@ -513,52 +513,42 @@ final class DailyCashMetroLedger
             ->get();
 
         $sections = [];
-        $currentSection = null;
+        foreach (self::sections() as $section) {
+            $heading = $section['heading'];
+            $slug = $section['slug'];
+            $built = ['heading' => $heading, 'lines' => []];
 
-        foreach (self::sheetDefinition() as $row) {
-            $kind = $row['kind'] ?? '';
-            if ($kind === 'heading') {
-                if ($currentSection !== null) {
-                    $sections[] = $currentSection;
-                }
-                $currentSection = [
-                    'heading' => (string) ($row['title'] ?? ''),
-                    'lines' => [],
+            foreach ($section['lines'] as $row) {
+                $type = (string) $row['type'];
+                $categoryKey = (string) $row['category_key'];
+                $categoryDisplayBase = (string) ($row['category_display'] ?? $row['label'] ?? $categoryKey);
+
+                $monthMatches = self::filterEntriesForSheetLine($entries, $year, $month, $type, $categoryKey);
+                $amount = round((float) $monthMatches->sum('amount'), 2);
+
+                $displayLabel = self::worksheetUsesOthersAggregateLabel($categoryKey)
+                    ? self::aggregatedOthersCategoryLabel($categoryDisplayBase, $monthMatches)
+                    : $categoryDisplayBase;
+
+                $built['lines'][] = [
+                    'type' => $type,
+                    'category_key' => $categoryKey,
+                    'category_display' => $displayLabel,
+                    'type_word' => self::worksheetTypeWord($type),
+                    'primary_amount_column' => self::primaryAmountColumn($type),
+                    'amount' => $amount,
+                    'bank_withdrawals_in_capital' => $type === 'CAPITAL'
+                        ? self::bankWithdrawalsNoteAmount($categoryKey, $monthMatches)
+                        : 0.0,
+                    'is_custom' => false,
                 ];
-
-                continue;
-            }
-            if ($kind !== 'line' || $currentSection === null) {
-                continue;
             }
 
-            $type = (string) $row['type'];
-            $categoryKey = (string) $row['category_key'];
-            $categoryDisplayBase = (string) ($row['category_display'] ?? $row['label'] ?? $categoryKey);
+            foreach (self::customRowsForSection($entries, $slug, $year, $month) as $customLine) {
+                $built['lines'][] = $customLine;
+            }
 
-            $monthMatches = self::filterEntriesForSheetLine($entries, $year, $month, $type, $categoryKey);
-
-            $amount = round((float) $monthMatches->sum('amount'), 2);
-
-            $displayLabel = self::worksheetUsesOthersAggregateLabel($categoryKey)
-                ? self::aggregatedOthersCategoryLabel($categoryDisplayBase, $monthMatches)
-                : $categoryDisplayBase;
-
-            $currentSection['lines'][] = [
-                'type' => $type,
-                'category_key' => $categoryKey,
-                'category_display' => $displayLabel,
-                'type_word' => self::worksheetTypeWord($type),
-                'primary_amount_column' => self::primaryAmountColumn($type),
-                'amount' => $amount,
-                'bank_withdrawals_in_capital' => $type === 'CAPITAL'
-                    ? self::bankWithdrawalsNoteAmount($categoryKey, $monthMatches)
-                    : 0.0,
-            ];
-        }
-
-        if ($currentSection !== null) {
-            $sections[] = $currentSection;
+            $sections[] = $built;
         }
 
         $t = self::totalsForEntries($entries);
@@ -606,63 +596,53 @@ final class DailyCashMetroLedger
         }
 
         $sections = [];
-        $currentSection = null;
+        foreach (self::sections() as $section) {
+            $built = ['heading' => $section['heading'], 'lines' => []];
+            $slug = $section['slug'];
 
-        foreach (self::sheetDefinition() as $row) {
-            $kind = $row['kind'] ?? '';
-            if ($kind === 'heading') {
-                if ($currentSection !== null) {
-                    $sections[] = $currentSection;
+            foreach ($section['lines'] as $row) {
+                $type = (string) $row['type'];
+                $categoryKey = (string) $row['category_key'];
+                $categoryDisplayBase = (string) ($row['category_display'] ?? $row['label'] ?? $categoryKey);
+
+                $yearMatches = self::filterEntriesForSheetLine($entries, $year, null, $type, $categoryKey);
+
+                $displayLabel = self::worksheetUsesOthersAggregateLabel($categoryKey)
+                    ? self::aggregatedOthersCategoryLabel($categoryDisplayBase, $yearMatches)
+                    : $categoryDisplayBase;
+
+                $primaryCol = self::resolveAnnualCashflowAmountColumn($type);
+
+                $monthsData = [];
+                $rowSum = 0.0;
+                for ($m = 1; $m <= 12; $m++) {
+                    $monthMatches = self::filterEntriesForSheetLine($entries, $year, $m, $type, $categoryKey);
+                    $amt = round((float) $monthMatches->sum('amount'), 2);
+                    $cell = array_fill_keys($cols, 0.0);
+                    $cell[$primaryCol] = $amt;
+                    $monthsData[$m] = $cell;
+                    $rowSum += $amt;
                 }
-                $currentSection = [
-                    'heading' => (string) ($row['title'] ?? ''),
-                    'lines' => [],
+
+                $built['lines'][] = [
+                    'type' => $type,
+                    'category_key' => $categoryKey,
+                    'category_display' => $displayLabel,
+                    'primary_amount_column' => $primaryCol,
+                    'months' => $monthsData,
+                    'row_total' => round($rowSum, 2),
+                    'bank_withdrawals_in_capital' => $type === 'CAPITAL'
+                        ? self::bankWithdrawalsNoteAmount($categoryKey, $yearMatches)
+                        : 0.0,
+                    'is_custom' => false,
                 ];
-
-                continue;
-            }
-            if ($kind !== 'line' || $currentSection === null) {
-                continue;
             }
 
-            $type = (string) $row['type'];
-            $categoryKey = (string) $row['category_key'];
-            $categoryDisplayBase = (string) ($row['category_display'] ?? $row['label'] ?? $categoryKey);
-
-            $yearMatches = self::filterEntriesForSheetLine($entries, $year, null, $type, $categoryKey);
-
-            $displayLabel = self::worksheetUsesOthersAggregateLabel($categoryKey)
-                ? self::aggregatedOthersCategoryLabel($categoryDisplayBase, $yearMatches)
-                : $categoryDisplayBase;
-
-            $primaryCol = self::resolveAnnualCashflowAmountColumn($type);
-
-            $monthsData = [];
-            $rowSum = 0.0;
-            for ($m = 1; $m <= 12; $m++) {
-                $monthMatches = self::filterEntriesForSheetLine($entries, $year, $m, $type, $categoryKey);
-                $amt = round((float) $monthMatches->sum('amount'), 2);
-                $cell = array_fill_keys($cols, 0.0);
-                $cell[$primaryCol] = $amt;
-                $monthsData[$m] = $cell;
-                $rowSum += $amt;
+            foreach (self::customRowsForSectionAnnual($entries, $slug, $year, $cols) as $customLine) {
+                $built['lines'][] = $customLine;
             }
 
-            $currentSection['lines'][] = [
-                'type' => $type,
-                'category_key' => $categoryKey,
-                'category_display' => $displayLabel,
-                'primary_amount_column' => $primaryCol,
-                'months' => $monthsData,
-                'row_total' => round($rowSum, 2),
-                'bank_withdrawals_in_capital' => $type === 'CAPITAL'
-                    ? self::bankWithdrawalsNoteAmount($categoryKey, $yearMatches)
-                    : 0.0,
-            ];
-        }
-
-        if ($currentSection !== null) {
-            $sections[] = $currentSection;
+            $sections[] = $built;
         }
 
         $totalsMonths = [];
@@ -715,6 +695,114 @@ final class DailyCashMetroLedger
             'ADJUSTMENT' => 'adjustment',
             default => 'expense',
         };
+    }
+
+    /**
+     * Aggregate per-day custom rows ("custom:<slug>") into monthly/annual lines, grouped by (type, description).
+     *
+     * @param  Collection<int, DailyCashEntry>  $entries
+     * @return list<array<string, mixed>>
+     */
+    private static function customRowsForSection(Collection $entries, string $sectionSlug, int $year, ?int $month): array
+    {
+        $customKey = self::customCategoryKeyForSlug($sectionSlug);
+        $matches = $entries->filter(function (DailyCashEntry $e) use ($customKey, $year, $month) {
+            if ((string) ($e->category ?? '') !== $customKey) {
+                return false;
+            }
+            $d = $e->day->date;
+            if ((int) $d->format('Y') !== $year) {
+                return false;
+            }
+            if ($month !== null && (int) $d->format('n') !== $month) {
+                return false;
+            }
+
+            return true;
+        })->values();
+
+        if ($matches->isEmpty()) {
+            return [];
+        }
+
+        $groups = [];
+        foreach ($matches as $entry) {
+            $type = (string) ($entry->type ?? '');
+            $desc = trim((string) ($entry->description ?? ''));
+            $label = $desc !== '' ? $desc : 'Custom row';
+            $bucketKey = $type.'|'.mb_strtoupper(preg_replace('/\s+/', ' ', $label), 'UTF-8');
+            if (! isset($groups[$bucketKey])) {
+                $groups[$bucketKey] = [
+                    'type' => $type,
+                    'category_key' => $customKey,
+                    'category_display' => $label,
+                    'type_word' => self::worksheetTypeWord($type),
+                    'primary_amount_column' => self::primaryAmountColumn($type),
+                    'amount' => 0.0,
+                    'bank_withdrawals_in_capital' => 0.0,
+                    'is_custom' => true,
+                ];
+            }
+            $groups[$bucketKey]['amount'] = round($groups[$bucketKey]['amount'] + (float) $entry->amount, 2);
+        }
+
+        return array_values($groups);
+    }
+
+    /**
+     * Annual variant: 12-month cells per (type, description) custom-row group.
+     *
+     * @param  Collection<int, DailyCashEntry>  $entries
+     * @param  list<string>  $cols
+     * @return list<array<string, mixed>>
+     */
+    private static function customRowsForSectionAnnual(Collection $entries, string $sectionSlug, int $year, array $cols): array
+    {
+        $customKey = self::customCategoryKeyForSlug($sectionSlug);
+        $matches = $entries->filter(function (DailyCashEntry $e) use ($customKey, $year) {
+            if ((string) ($e->category ?? '') !== $customKey) {
+                return false;
+            }
+
+            return (int) $e->day->date->format('Y') === $year;
+        })->values();
+
+        if ($matches->isEmpty()) {
+            return [];
+        }
+
+        $groups = [];
+        foreach ($matches as $entry) {
+            $type = (string) ($entry->type ?? '');
+            $desc = trim((string) ($entry->description ?? ''));
+            $label = $desc !== '' ? $desc : 'Custom row';
+            $bucketKey = $type.'|'.mb_strtoupper(preg_replace('/\s+/', ' ', $label), 'UTF-8');
+            $primaryCol = self::resolveAnnualCashflowAmountColumn($type);
+            if (! isset($groups[$bucketKey])) {
+                $monthsData = [];
+                for ($m = 1; $m <= 12; $m++) {
+                    $monthsData[$m] = array_fill_keys($cols, 0.0);
+                }
+                $groups[$bucketKey] = [
+                    'type' => $type,
+                    'category_key' => $customKey,
+                    'category_display' => $label,
+                    'primary_amount_column' => $primaryCol,
+                    'months' => $monthsData,
+                    'row_total' => 0.0,
+                    'bank_withdrawals_in_capital' => 0.0,
+                    'is_custom' => true,
+                ];
+            }
+            $mIdx = (int) $entry->day->date->format('n');
+            $groups[$bucketKey]['months'][$mIdx][$primaryCol] = round(
+                $groups[$bucketKey]['months'][$mIdx][$primaryCol] + (float) $entry->amount,
+                2
+            );
+            $groups[$bucketKey]['row_total'] = round($groups[$bucketKey]['row_total'] + (float) $entry->amount, 2);
+        }
+
+        return array_values($groups);
     }
 
     /**
