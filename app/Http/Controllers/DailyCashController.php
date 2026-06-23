@@ -303,61 +303,6 @@ class DailyCashController extends Controller
 
         $metroSheetRows = DailyCashMetroLedger::buildSheetRows($dailyCash);
 
-        // #region agent log
-        $assortedLines = [];
-        foreach ($metroSheetRows as $_row) {
-            if (($_row['kind'] ?? '') !== 'line') {
-                continue;
-            }
-            $ck = (string) ($_row['category_key'] ?? '');
-            if (! str_starts_with($ck, 'metro_exp_assorted')) {
-                continue;
-            }
-            $rep = $_row['representative_entry'] ?? null;
-            $assortedLines[] = [
-                'category_key' => $ck,
-                'line_amount' => (float) ($_row['amount'] ?? 0),
-                'entry_count' => (int) ($_row['entry_count'] ?? 0),
-                'rep_id' => $rep?->id,
-                'rep_amount' => $rep ? (float) $rep->amount : null,
-            ];
-        }
-        $orphanExpenseEntries = $dailyCash->entries
-            ->filter(fn ($e) => ($e->type ?? '') === 'EXPENSES'
-                && ! DailyCashMetroLedger::isManagedCategory($e->category))
-            ->map(fn ($e) => [
-                'id' => $e->id,
-                'category' => $e->category,
-                'amount' => (float) $e->amount,
-                'description' => $e->description,
-            ])->values()->all();
-        $dupAssorted = $dailyCash->entries
-            ->filter(fn ($e) => ($e->type ?? '') === 'EXPENSES'
-                && str_starts_with((string) ($e->category ?? ''), 'metro_exp_assorted')
-                && abs((float) $e->amount) > 0.005)
-            ->groupBy('category')
-            ->filter(fn ($g) => $g->count() > 1)
-            ->map(fn ($g, $cat) => ['category' => $cat, 'count' => $g->count(), 'ids' => $g->pluck('id')->all(), 'sum' => round((float) $g->sum('amount'), 2)])
-            ->values()->all();
-        @file_put_contents(base_path('.cursor/debug-219fe6.log'), json_encode([
-            'sessionId' => '219fe6',
-            'runId' => 'pre-fix',
-            'hypothesisId' => 'A,B,E',
-            'location' => 'DailyCashController.php:show',
-            'message' => 'day view worksheet vs footer expenses',
-            'data' => [
-                'date' => $dailyCash->date->format('Y-m-d'),
-                'footer_expenses' => round((float) $dailyCash->expenses(), 2),
-                'assorted_line_sum' => round(array_sum(array_column($assortedLines, 'line_amount')), 2),
-                'assorted_lines' => $assortedLines,
-                'orphan_expense_entries' => $orphanExpenseEntries,
-                'duplicate_assorted_categories' => $dupAssorted,
-                'total_expense_entries' => $dailyCash->entries->where('type', 'EXPENSES')->count(),
-            ],
-            'timestamp' => (int) round(microtime(true) * 1000),
-        ])."\n", FILE_APPEND);
-        // #endregion
-
         $prevWeekNav = $this->weekPrevNav($dailyCash);
         $nextWeekNav = $this->weekNextNav($dailyCash);
         $weekStrip = $this->buildWeekStrip($dailyCash);
@@ -437,22 +382,6 @@ class DailyCashController extends Controller
     {
         $payload = $this->validatedDailyCashDayWorksheetStore($request);
 
-        // #region agent log
-        @file_put_contents(base_path('.cursor/debug-219fe6.log'), json_encode([
-            'sessionId' => '219fe6',
-            'runId' => 'pre-fix',
-            'hypothesisId' => 'B',
-            'location' => 'DailyCashController.php:storeEntry',
-            'message' => 'add entry payload',
-            'data' => [
-                'day' => $dailyCash->date->format('Y-m-d'),
-                'payload' => $payload,
-                'amount' => $request->input('amount'),
-            ],
-            'timestamp' => (int) round(microtime(true) * 1000),
-        ])."\n", FILE_APPEND);
-        // #endregion
-
         $max = $dailyCash->entries()->max('sort_order') ?? 0;
         $dailyCash->entries()->create([
             'type' => $payload['type'],
@@ -473,35 +402,6 @@ class DailyCashController extends Controller
     public function updateEntry(Request $request, DailyCashDay $dailyCash, DailyCashEntry $entry)
     {
         abort_if($entry->daily_cash_day_id !== $dailyCash->id, 404);
-
-        // #region agent log
-        $before = [
-            'id' => $entry->id,
-            'type' => $entry->type,
-            'category' => $entry->category,
-            'amount' => (float) $entry->amount,
-            'description' => $entry->description,
-        ];
-        @file_put_contents(base_path('.cursor/debug-219fe6.log'), json_encode([
-            'sessionId' => '219fe6',
-            'runId' => 'pre-fix',
-            'hypothesisId' => 'C,D',
-            'location' => 'DailyCashController.php:updateEntry:before',
-            'message' => 'edit entry request received',
-            'data' => [
-                'day' => $dailyCash->date->format('Y-m-d'),
-                'before' => $before,
-                'request_type' => $request->input('type'),
-                'worksheet_category_key' => $request->input('worksheet_category_key'),
-                'worksheet_key_filled' => $request->filled('worksheet_category_key'),
-                'amount' => $request->input('amount'),
-                'description' => $request->input('description'),
-                'other_specify' => $request->input('other_specify'),
-                'legacy_mode' => ! $request->filled('worksheet_category_key'),
-            ],
-            'timestamp' => (int) round(microtime(true) * 1000),
-        ])."\n", FILE_APPEND);
-        // #endregion
 
         if ($request->filled('worksheet_category_key')) {
             $payload = $this->validatedDailyCashDayWorksheetUpdate($request);
@@ -539,32 +439,6 @@ class DailyCashController extends Controller
             'amount' => $request->amount,
             'subcategory_override' => $payload['subcategory_override'],
         ]);
-
-        // #region agent log
-        $entry->refresh();
-        @file_put_contents(base_path('.cursor/debug-219fe6.log'), json_encode([
-            'sessionId' => '219fe6',
-            'runId' => 'pre-fix',
-            'hypothesisId' => 'A,C,D',
-            'location' => 'DailyCashController.php:updateEntry:after',
-            'message' => 'edit entry persisted',
-            'data' => [
-                'day' => $dailyCash->date->format('Y-m-d'),
-                'before' => $before,
-                'payload' => $payload,
-                'after' => [
-                    'id' => $entry->id,
-                    'type' => $entry->type,
-                    'category' => $entry->category,
-                    'amount' => (float) $entry->amount,
-                    'description' => $entry->description,
-                ],
-                'managed_category' => DailyCashMetroLedger::isManagedCategory($entry->category),
-                'matches_expense_assorted' => str_starts_with((string) ($entry->category ?? ''), 'metro_exp_assorted'),
-            ],
-            'timestamp' => (int) round(microtime(true) * 1000),
-        ])."\n", FILE_APPEND);
-        // #endregion
 
         $this->ledger->syncOpeningBalancesForwardFrom($dailyCash);
 

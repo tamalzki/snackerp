@@ -414,9 +414,13 @@ final class DailyCashMetroLedger
      *
      * @return list<array<string, mixed>>
      */
+    /** Heading used for the catch-all section listing entries no worksheet line or custom row claims (e.g. legacy `PURCHASES`-type entries logged via the Statement screens). */
+    public const UNMATCHED_SECTION_HEADING = 'UNCATEGORIZED / OTHER LEDGER TYPES';
+
     public static function buildSheetRows(DailyCashDay $day): array
     {
         $built = [];
+        $claimedIds = [];
         foreach (self::sections() as $section) {
             $heading = $section['heading'];
             $sectionSlug = $section['slug'];
@@ -441,6 +445,10 @@ final class DailyCashMetroLedger
                         ->filter(fn (DailyCashEntry $e) => $e->type === $type && $e->category === $categoryKey)
                         ->sortBy('id')
                         ->values();
+
+                foreach ($matches as $m) {
+                    $claimedIds[$m->id] = true;
+                }
 
                 $amount = (float) $matches->sum('amount');
                 $representative = $matches->first(function (DailyCashEntry $e) {
@@ -478,6 +486,7 @@ final class DailyCashMetroLedger
                 ->values();
 
             foreach ($customEntries as $entry) {
+                $claimedIds[$entry->id] = true;
                 $entryType = (string) ($entry->type ?? $primaryType);
                 $built[] = [
                     'kind' => 'line',
@@ -493,6 +502,36 @@ final class DailyCashMetroLedger
                     'bank_withdrawals_in_capital' => 0.0,
                     'is_custom' => true,
                     'section_slug' => $sectionSlug,
+                ];
+            }
+        }
+
+        $unmatched = $day->entries
+            ->reject(fn (DailyCashEntry $e) => isset($claimedIds[$e->id]))
+            ->sortBy('id')
+            ->values();
+
+        if ($unmatched->isNotEmpty()) {
+            $built[] = ['kind' => 'heading', 'title' => self::UNMATCHED_SECTION_HEADING, 'no_add' => true];
+
+            foreach ($unmatched as $entry) {
+                $entryType = (string) $entry->type;
+                $built[] = [
+                    'kind' => 'line',
+                    'type' => $entryType,
+                    'category_key' => (string) ($entry->category ?? ''),
+                    'category_display' => (string) ($entry->description !== null && $entry->description !== ''
+                        ? $entry->description
+                        : self::worksheetTypeWord($entryType)),
+                    'type_word' => self::worksheetTypeWord($entryType),
+                    'amount' => (float) $entry->amount,
+                    'entry_count' => 1,
+                    'meaningful_entry_count' => 1,
+                    'representative_entry' => $entry,
+                    'entries' => collect([$entry]),
+                    'bank_withdrawals_in_capital' => 0.0,
+                    'is_custom' => true,
+                    'section_slug' => '',
                 ];
             }
         }

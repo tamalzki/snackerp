@@ -139,7 +139,7 @@
         </tr>
         @endif
     @endforeach
-    @if($sectionSlugForGroup !== '')
+    @if($sectionSlugForGroup !== '' && !($section['no_add'] ?? false))
         <tr class="daily-cash-sheet-add-row">
             <td colspan="10" class="ps-3 py-1 text-end" style="font-size:0.72rem;background:#f8fafc;">
                 <button type="button"

@@ -289,7 +289,7 @@
                             if ($currentSection !== null) {
                                 $metroSections[] = $currentSection;
                             }
-                            $currentSection = ['heading' => $_sheetRow['title'] ?? '', 'lines' => []];
+                            $currentSection = ['heading' => $_sheetRow['title'] ?? '', 'lines' => [], 'no_add' => $_sheetRow['no_add'] ?? false];
                         } elseif ($_k === 'line' && $currentSection !== null) {
                             $currentSection['lines'][] = $_sheetRow;
                         }
@@ -1575,35 +1575,6 @@ function editEntry(id, type, description, amount, category, subKey) {
 
 function dailyCashEditEntrySubmit() {
     if (!dailyCashConfirmCarryImpact()) return false;
-    // #region agent log
-    (function () {
-        const form = document.getElementById('editEntryForm');
-        const fd = form ? new FormData(form) : null;
-        const payload = {};
-        if (fd) {
-            fd.forEach(function (v, k) { payload[k] = v; });
-        }
-        fetch('http://127.0.0.1:7726/ingest/e213b101-40c7-4a46-83e6-7ce7bad88488', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '219fe6' },
-            body: JSON.stringify({
-                sessionId: '219fe6',
-                runId: 'pre-fix',
-                hypothesisId: 'C',
-                location: 'show.blade.php:dailyCashEditEntrySubmit',
-                message: 'edit form submit payload',
-                data: {
-                    legacyMode: !!window.__dailyCashEditLegacyMode,
-                    group: document.getElementById('editEntryGroup') ? document.getElementById('editEntryGroup').value : null,
-                    worksheetKey: document.getElementById('editEntryWorksheetCategoryKey') ? document.getElementById('editEntryWorksheetCategoryKey').value : null,
-                    resolvedType: document.getElementById('editEntryResolvedType') ? document.getElementById('editEntryResolvedType').value : null,
-                    formFields: payload,
-                },
-                timestamp: Date.now(),
-            }),
-        }).catch(function () {});
-    })();
-    // #endregion
     if (!window.__dailyCashEditLegacyMode) {
         const grp = document.getElementById('editEntryGroup').value;
         if (!grp) {
