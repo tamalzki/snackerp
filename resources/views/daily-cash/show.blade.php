@@ -636,11 +636,18 @@
         'expense' => ['buckets' => []],
         'managed_keys' => [],
     ];
+    $__dcfAllEntries = $dailyCash->entries->map(fn ($e) => [
+        'type' => $e->type,
+        'category' => $e->category,
+        'description' => $e->description,
+        'amount' => (float) $e->amount,
+    ])->values();
 @endphp
 <script>
 window.cashEntryFormMeta = @json($__dcfCashEntryMeta);
 window.dailyCashWorksheetEntryMeta = @json($__dcfWorksheetMeta);
 window.dailyCashDiscretionaryMetroOthersCategory = @json(\App\Support\DailyCashMetroLedger::DISCRETIONARY_METRO_OTHERS_CATEGORY);
+window.dailyCashAllEntries = @json($__dcfAllEntries);
 
 function dailyCashDiscretionaryMetroOthersCategoryKey() {
     return window.dailyCashDiscretionaryMetroOthersCategory || 'metro_discretionary_others';
@@ -1013,6 +1020,23 @@ function dailyCashAssertAmountNonZeroForAdjustment(amtInput, resolvedType) {
     return true;
 }
 
+function dailyCashNormDesc(s) {
+    return String(s || '').trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+function dailyCashFindDuplicateEntry(type, category, description, amount) {
+    const list = window.dailyCashAllEntries || [];
+    const normDesc = dailyCashNormDesc(description);
+    const amt = parseFloat(amount);
+    if (!isFinite(amt)) return null;
+    return list.find(function (e) {
+        return e.type === type
+            && (e.category || '') === (category || '')
+            && dailyCashNormDesc(e.description) === normDesc
+            && Math.abs(parseFloat(e.amount) - amt) < 0.005;
+    }) || null;
+}
+
 function dailyCashAddEntrySubmit() {
     const grp = document.getElementById('addEntryGroup').value;
     if (!grp) {
@@ -1044,6 +1068,26 @@ function dailyCashAddEntrySubmit() {
     const resolvedAdd = (document.getElementById('addEntryResolvedType').value || grp);
     if (!dailyCashAssertAmountNonZeroForAdjustment(document.getElementById('addEntryAmountInput'), resolvedAdd)) {
         return false;
+    }
+
+    const catForMatch = grp === 'CASH_FROM_BANK' ? 'cash_from_bank' : document.getElementById('addEntryWorksheetCategoryKey').value;
+    let descForMatch = '';
+    if (grp === 'CASH_FROM_BANK') {
+        descForMatch = document.getElementById('addEntryDescription').value;
+    } else {
+        const lineSel = document.getElementById('addEntryLineSelect');
+        const opt = lineSel && lineSel.options[lineSel.selectedIndex];
+        const needsOther = opt && opt.dataset.needsOther === '1';
+        descForMatch = needsOther
+            ? document.getElementById('addEntryOtherSpecify').value
+            : document.getElementById('addEntryDescription').value;
+    }
+    const amtForMatch = document.getElementById('addEntryAmountInput').value;
+    const dup = dailyCashFindDuplicateEntry(resolvedAdd, catForMatch, descForMatch, amtForMatch);
+    if (dup) {
+        const label = (descForMatch || '').trim() || 'no description';
+        const ok = window.confirm('An entry like this already exists today (₱' + parseFloat(amtForMatch).toFixed(2) + ' — ' + label + '). Add it again anyway?');
+        if (!ok) return false;
     }
     return true;
 }

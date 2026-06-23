@@ -19,6 +19,11 @@
             $sectionSlug = (string) ($sheetRow['section_slug'] ?? '');
             $isAdjustment = $lineType === 'ADJUSTMENT';
             $amtClass = $isAdjustment && $lineAmt < 0 ? 'text-danger' : '';
+            $entryCount = (int) ($sheetRow['meaningful_entry_count'] ?? ($rep ? 1 : 0));
+            $lineEntries = $entryCount > 1
+                ? ($sheetRow['entries'] ?? collect())->filter(fn ($e) => abs((float) $e->amount) > 0.005)->values()
+                : collect();
+            $breakdownId = 'entries-'.$sectionSlugForGroup.'-'.str_replace([':', '.', ' '], '-', (string) ($sheetRow['category_key'] ?? 'x')).'-'.$lineIdx;
         @endphp
         <tr>
             @if($lineIdx === 0)
@@ -71,13 +76,12 @@
                 @endif
             </td>
             <td class="text-end pe-2 align-top py-2" style="white-space:nowrap;">
-                @if($rep)
+                @if($rep && ($isCustom || $entryCount <= 1))
                     <button class="btn btn-outline-secondary py-0 px-2"
                             style="font-size:0.75rem;"
                             onclick="editEntry({{ $rep->id }}, {{ json_encode($rep->type) }}, {{ json_encode($rep->description) }}, {{ json_encode((float) $rep->amount) }}, {{ json_encode($rep->category) }}, {{ json_encode($rep->subcategory_override ?? '') }})">
                         <i class="bi bi-pencil"></i> Edit
                     </button>
-                    @if($isCustom)
                     <form method="POST"
                           action="{{ route('daily-cash.entries.destroy', [$dailyCash, $rep]) }}"
                           class="d-inline"
@@ -88,21 +92,52 @@
                             <i class="bi bi-trash"></i> Delete
                         </button>
                     </form>
-                    @else
-                    <form method="POST"
-                          action="{{ route('daily-cash.entries.destroy', [$dailyCash, $rep]) }}"
-                          class="d-inline"
-                          onsubmit="return dailyCashConfirmDeleteEntry()">
-                        @csrf @method('DELETE')
-                        <button class="btn btn-outline-danger py-0 px-2"
-                                style="font-size:0.75rem;">
-                            <i class="bi bi-trash"></i> Delete
-                        </button>
-                    </form>
-                    @endif
+                @elseif($rep && $entryCount > 1)
+                    <button class="btn btn-outline-secondary py-0 px-2"
+                            style="font-size:0.75rem;"
+                            type="button"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#{{ $breakdownId }}">
+                        <i class="bi bi-list-ul"></i> {{ $entryCount }} entries
+                    </button>
                 @endif
             </td>
         </tr>
+        @if(!$isCustom && $entryCount > 1)
+        <tr class="daily-cash-sheet-breakdown-row">
+            <td colspan="10" class="p-0 border-0">
+                <div id="{{ $breakdownId }}" class="collapse">
+                    <table class="table table-sm mb-0" style="font-size:0.78rem;background:#f8fafc;">
+                        <tbody>
+                        @foreach($lineEntries as $e)
+                            <tr>
+                                <td class="ps-4 text-muted">{{ $e->description !== null && $e->description !== '' ? $e->description : '—' }}</td>
+                                <td class="text-end" style="width:9rem;">₱{{ number_format((float) $e->amount, 2) }}</td>
+                                <td class="text-end pe-2" style="white-space:nowrap;width:11rem;">
+                                    <button class="btn btn-outline-secondary py-0 px-2"
+                                            style="font-size:0.72rem;"
+                                            onclick="editEntry({{ $e->id }}, {{ json_encode($e->type) }}, {{ json_encode($e->description) }}, {{ json_encode((float) $e->amount) }}, {{ json_encode($e->category) }}, {{ json_encode($e->subcategory_override ?? '') }})">
+                                        <i class="bi bi-pencil"></i> Edit
+                                    </button>
+                                    <form method="POST"
+                                          action="{{ route('daily-cash.entries.destroy', [$dailyCash, $e]) }}"
+                                          class="d-inline"
+                                          onsubmit="return dailyCashConfirmDeleteEntry()">
+                                        @csrf @method('DELETE')
+                                        <button class="btn btn-outline-danger py-0 px-2"
+                                                style="font-size:0.72rem;">
+                                            <i class="bi bi-trash"></i> Delete
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </td>
+        </tr>
+        @endif
     @endforeach
     @if($sectionSlugForGroup !== '')
         <tr class="daily-cash-sheet-add-row">

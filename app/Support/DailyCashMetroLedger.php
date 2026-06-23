@@ -446,6 +446,7 @@ final class DailyCashMetroLedger
                 $representative = $matches->first(function (DailyCashEntry $e) {
                     return abs((float) $e->amount) > 0.005;
                 }) ?? $matches->first();
+                $meaningfulCount = $matches->filter(fn (DailyCashEntry $e) => abs((float) $e->amount) > 0.005)->count();
 
                 $displayLabel = self::worksheetUsesOthersAggregateLabel($categoryKey)
                     ? self::aggregatedOthersCategoryLabel($categoryDisplay, $matches)
@@ -459,7 +460,9 @@ final class DailyCashMetroLedger
                     'type_word' => self::worksheetTypeWord($type),
                     'amount' => $amount,
                     'entry_count' => $matches->count(),
+                    'meaningful_entry_count' => max($meaningfulCount, $matches->isEmpty() ? 0 : 1),
                     'representative_entry' => $representative,
+                    'entries' => $matches,
                     'bank_withdrawals_in_capital' => $type === 'CAPITAL'
                         ? self::bankWithdrawalsNoteAmount($categoryKey, $matches)
                         : 0.0,
