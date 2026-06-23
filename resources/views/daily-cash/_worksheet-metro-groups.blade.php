@@ -20,6 +20,7 @@
             $isAdjustment = $lineType === 'ADJUSTMENT';
             $amtClass = $isAdjustment && $lineAmt < 0 ? 'text-danger' : '';
             $entryCount = (int) ($sheetRow['meaningful_entry_count'] ?? ($rep ? 1 : 0));
+            $isUnmatched = $isCustom && $sectionSlug === '';
             $lineEntries = $entryCount > 1
                 ? ($sheetRow['entries'] ?? collect())->filter(fn ($e) => abs((float) $e->amount) > 0.005)->values()
                 : collect();
@@ -77,10 +78,10 @@
             </td>
             <td class="text-end pe-2 align-top py-2" style="white-space:nowrap;">
                 @if($rep && ($isCustom || $entryCount <= 1))
-                    <button class="btn btn-outline-secondary py-0 px-2"
+                    <button class="btn {{ $isUnmatched ? 'btn-outline-warning' : 'btn-outline-secondary' }} py-0 px-2"
                             style="font-size:0.75rem;"
-                            onclick="editEntry({{ $rep->id }}, {{ json_encode($rep->type) }}, {{ json_encode($rep->description) }}, {{ json_encode((float) $rep->amount) }}, {{ json_encode($rep->category) }}, {{ json_encode($rep->subcategory_override ?? '') }})">
-                        <i class="bi bi-pencil"></i> Edit
+                            onclick="editEntry({{ $rep->id }}, {{ json_encode($rep->type) }}, {{ json_encode($rep->description) }}, {{ json_encode((float) $rep->amount) }}, {{ json_encode($rep->category) }}, {{ json_encode($rep->subcategory_override ?? '') }}, {{ $isUnmatched ? 'true' : 'false' }})">
+                        <i class="bi bi-{{ $isUnmatched ? 'arrow-left-right' : 'pencil' }}"></i> {{ $isUnmatched ? 'Move to group' : 'Edit' }}
                     </button>
                     <form method="POST"
                           action="{{ route('daily-cash.entries.destroy', [$dailyCash, $rep]) }}"

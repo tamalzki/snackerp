@@ -1491,19 +1491,43 @@ function dailyCashSetLegacyClassifyVisibility(isBank) {
     if (preset) preset.disabled = isBank;
 }
 
-function editEntry(id, type, description, amount, category, subKey) {
+function editEntry(id, type, description, amount, category, subKey, reclassify) {
     document.getElementById('editEntryForm').action =
         '{{ url("daily-cash/".$dailyCash->id."/entries") }}/' + id;
+    window.__dailyCashReclassifyDesc = reclassify ? (description || '') : null;
 
     const meta = window.dailyCashWorksheetEntryMeta || {};
     const managed = meta.managed_keys || [];
     const cat = category ? String(category) : '';
     const formBank = cat === 'cash_from_bank';
     const worksheetKey = (type === 'CAPITAL' && cat === '') ? (((meta.capital && meta.capital.lines) || [])[0] || {}).key : cat;
-    const useWorksheet = formBank || (worksheetKey && managed.indexOf(worksheetKey) !== -1);
+    const isCustomKey = worksheetKey && String(worksheetKey).indexOf('custom:') === 0;
+    const useWorksheet = !reclassify && (formBank || (worksheetKey && (managed.indexOf(worksheetKey) !== -1 || isCustomKey)));
 
     const wsPane = document.getElementById('editEntryWorksheetPane');
     const legPane = document.getElementById('editEntryLegacyPane');
+
+    if (reclassify) {
+        window.__dailyCashEditLegacyMode = false;
+        wsPane.classList.remove('d-none');
+        legPane.classList.add('d-none');
+        dailyCashSetPaneInputsDisabled(wsPane, false);
+        dailyCashSetPaneInputsDisabled(legPane, true);
+        dailyCashFillEditGroupSelect(document.getElementById('editEntryGroup'));
+        const grpEl = document.getElementById('editEntryGroup');
+        grpEl.value = (type === 'PURCHASES') ? 'EXPENSES' : type;
+        if (!Array.from(grpEl.options).some(function (o) { return o.value === grpEl.value; })) {
+            grpEl.value = '';
+        }
+        dailyCashSyncEditWorksheetForm({ resetInputs: true });
+        document.getElementById('editAmount').value = amount;
+        const otherInEl = document.getElementById('editEntryOtherSpecify');
+        const descInEl = document.getElementById('editWsDesc');
+        if (otherInEl) otherInEl.value = description || '';
+        if (descInEl) descInEl.value = description || '';
+        new bootstrap.Modal(document.getElementById('editEntryModal')).show();
+        return;
+    }
 
     if (useWorksheet) {
         window.__dailyCashEditLegacyMode = false;
@@ -1649,6 +1673,12 @@ function dailyCashEditEntrySubmit() {
     if (editGrp) {
         editGrp.addEventListener('change', function () {
             dailyCashSyncEditWorksheetForm({ resetInputs: true });
+            if (window.__dailyCashReclassifyDesc) {
+                const o = document.getElementById('editEntryOtherSpecify');
+                const d = document.getElementById('editWsDesc');
+                if (o) o.value = window.__dailyCashReclassifyDesc;
+                if (d) d.value = window.__dailyCashReclassifyDesc;
+            }
         });
     }
     if (editBucket) {
