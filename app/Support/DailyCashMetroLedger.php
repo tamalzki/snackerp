@@ -632,6 +632,23 @@ final class DailyCashMetroLedger
             ->whereHas('day', fn ($q) => $q->whereYear('date', $year))
             ->get();
 
+        // One pass over the ledger: resolve each entry's month and index by type|category,
+        // so worksheet lines don't rescan the full year 13 times each (timeout at scale).
+        $monthOf = [];
+        $byMonth = array_fill(1, 12, []);
+        $byTypeCategory = [];
+        $capitalCandidates = [];
+        foreach ($entries as $e) {
+            $m = (int) $e->day->date->format('n');
+            $monthOf[spl_object_id($e)] = $m;
+            $byMonth[$m][] = $e;
+            $byTypeCategory[($e->type ?? '').'|'.($e->category ?? '')][] = $e;
+            if (($e->type ?? '') === 'CAPITAL'
+                || (($e->type ?? '') === 'INCOME' && ($e->category ?? '') === DailyCashflowCategories::CASH_FROM_BANK)) {
+                $capitalCandidates[] = $e;
+            }
+        }
+
         $monthLabels = [];
         for ($m = 1; $m <= 12; $m++) {
             $monthLabels[$m] = Carbon::createFromDate($year, $m, 1)->format('F');
@@ -647,7 +664,15 @@ final class DailyCashMetroLedger
                 $categoryKey = (string) $row['category_key'];
                 $categoryDisplayBase = (string) ($row['category_display'] ?? $row['label'] ?? $categoryKey);
 
-                $yearMatches = self::filterEntriesForSheetLine($entries, $year, null, $type, $categoryKey);
+                if ($type === 'CAPITAL') {
+                    $lineEntries = array_values(array_filter(
+                        $capitalCandidates,
+                        fn (DailyCashEntry $e) => self::entryMatchesCapitalWorksheetCategory($e, $categoryKey)
+                    ));
+                } else {
+                    $lineEntries = $byTypeCategory[$type.'|'.$categoryKey] ?? [];
+                }
+                $yearMatches = collect($lineEntries);
 
                 $displayLabel = self::worksheetUsesOthersAggregateLabel($categoryKey)
                     ? self::aggregatedOthersCategoryLabel($categoryDisplayBase, $yearMatches)
@@ -655,11 +680,15 @@ final class DailyCashMetroLedger
 
                 $primaryCol = self::resolveAnnualCashflowAmountColumn($type);
 
+                $monthSums = array_fill(1, 12, 0.0);
+                foreach ($lineEntries as $e) {
+                    $monthSums[$monthOf[spl_object_id($e)]] += (float) $e->amount;
+                }
+
                 $monthsData = [];
                 $rowSum = 0.0;
                 for ($m = 1; $m <= 12; $m++) {
-                    $monthMatches = self::filterEntriesForSheetLine($entries, $year, $m, $type, $categoryKey);
-                    $amt = round((float) $monthMatches->sum('amount'), 2);
+                    $amt = round($monthSums[$m], 2);
                     $cell = array_fill_keys($cols, 0.0);
                     $cell[$primaryCol] = $amt;
                     $monthsData[$m] = $cell;
@@ -688,13 +717,12 @@ final class DailyCashMetroLedger
         }
 
         $totalsMonths = [];
+        $netMonths = [];
+        $carryoverMonths = [];
         $grandSum = 0.0;
+        $running = 0.0;
         for ($m = 1; $m <= 12; $m++) {
-            $monthEntries = $entries->filter(
-                fn (DailyCashEntry $e) => (int) $e->day->date->format('Y') === $year
-                    && (int) $e->day->date->format('n') === $m
-            );
-            $t = self::totalsForEntries($monthEntries);
+            $t = self::totalsForEntries(collect($byMonth[$m]));
             $totalsMonths[$m] = [
                 'income' => round((float) $t['capital'] + (float) $t['income'], 2),
                 'expense' => round((float) $t['expenses'] + (float) $t['other'], 2),
@@ -705,6 +733,9 @@ final class DailyCashMetroLedger
             foreach ($totalsMonths[$m] as $v) {
                 $grandSum += $v;
             }
+            $netMonths[$m] = round((float) $t['net'], 2);
+            $running = round($running + $netMonths[$m], 2);
+            $carryoverMonths[$m] = $running;
         }
 
         return [
@@ -722,6 +753,16 @@ final class DailyCashMetroLedger
                 'label' => 'Totals',
                 'months' => $totalsMonths,
                 'row_total' => round($grandSum, 2),
+            ],
+            'net_row' => [
+                'label' => 'Net (month)',
+                'months' => $netMonths,
+                'row_total' => $running,
+            ],
+            'carryover_row' => [
+                'label' => 'Running balance (carry-over)',
+                'months' => $carryoverMonths,
+                'row_total' => $running,
             ],
             'has_entries' => $entries->isNotEmpty(),
         ];

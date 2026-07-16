@@ -6,6 +6,8 @@
     $amountCols = $grid['amount_columns'] ?? [];
     $sections = $grid['sections'] ?? [];
     $totalsRow = $grid['totals_row'] ?? ['label' => 'Totals', 'months' => [], 'row_total' => 0];
+    $netRow = $grid['net_row'] ?? ['label' => 'Net (month)', 'months' => [], 'row_total' => 0];
+    $carryoverRow = $grid['carryover_row'] ?? ['label' => 'Running balance (carry-over)', 'months' => [], 'row_total' => 0];
     $acn = count($amountCols);
     $colSpanSpacer = 3 + 11 + 12 * $acn;
 @endphp
@@ -209,6 +211,24 @@
                 @endphp
                 <td class="row-total-col">{{ abs($grandTot) >= 0.005 ? '₱'.number_format($grandTot, 2) : '' }}</td>
             </tr>
+            @foreach([$netRow, $carryoverRow] as $summaryRow)
+                <tr class="fw-bold annual-summary-row">
+                    <th class="sticky-grp ps-3" colspan="2">{{ $summaryRow['label'] ?? '' }}</th>
+                    @for($m = 1; $m <= 12; $m++)
+                        @if($m > 1)
+                            <th class="month-gap"></th>
+                        @endif
+                        @php $v = (float) ($summaryRow['months'][$m] ?? 0); @endphp
+                        <td colspan="{{ $acn }}" class="amt @if($v > 0.005) text-success @elseif($v < -0.005) text-danger @endif">
+                            {{ abs($v) >= 0.005 ? '₱'.number_format($v, 2) : '' }}
+                        </td>
+                    @endfor
+                    @php $srTot = (float) ($summaryRow['row_total'] ?? 0); @endphp
+                    <td class="row-total-col @if($srTot > 0.005) text-success @elseif($srTot < -0.005) text-danger @endif">
+                        {{ abs($srTot) >= 0.005 ? '₱'.number_format($srTot, 2) : '' }}
+                    </td>
+                </tr>
+            @endforeach
         </tfoot>
     </table>
 </div>
